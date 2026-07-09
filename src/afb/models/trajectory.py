@@ -56,7 +56,7 @@ class Trajectory(BaseModel):
     instruction: str | None = None
     agent: str
     agent_version: str | None = None
-    model: str
+    model: str | None = None  # None for non-LLM agents (e.g. Harbor's oracle)
     run_config: RunConfig
     outcome: Outcome
     test_output: str | None = None

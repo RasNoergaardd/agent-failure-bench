@@ -27,4 +27,5 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+norecursedirs = ["fixtures"]
 asyncio_mode = "auto"

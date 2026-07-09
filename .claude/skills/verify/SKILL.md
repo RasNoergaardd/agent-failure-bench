@@ -9,8 +9,15 @@ description: How to launch and drive this project's surfaces (afb CLI + annotati
 
 ```sh
 uv run afb schema --out <dir>        # writes Trajectory/FailureAnnotation JSON Schemas
+uv run afb ingest <harbor-job-dir> --out <dir> [--tasks-dir <dir>]   # Harbor run → trajectories
 uv run afb annotate <trajectory.json> --annotator human:<id> --annotations-dir <dir>
 ```
+
+Real Harbor output for ingest testing: `data/raw/smoke-oracle/smoke-oracle` (2 oracle
+trials, gitignored). A fresh one costs ~4 min: `harbor run -d terminal-bench/terminal-bench-2
+-a oracle -l 2 -n 1 -o data/raw/<name> -y -q` (needs Docker running; harbor is a uv tool,
+`export PATH="$HOME/.local/bin:$PATH"`). Task definitions: `harbor tasks download
+terminal-bench/<task> -o <dir>`.
 
 Fixture trajectory for TUI work: `tests/fixtures/sample_trajectory.json` (15 events,
 failure chain: ACT-1 at event 8 → RFL-1 at event 12). Always point `--annotations-dir`
