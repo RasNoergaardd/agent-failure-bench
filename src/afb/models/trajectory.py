@@ -53,6 +53,7 @@ class Trajectory(BaseModel):
     trajectory_id: str
     task_id: str
     task_source: str
+    instruction: str | None = None
     agent: str
     agent_version: str | None = None
     model: str
