@@ -1,0 +1,143 @@
+{
+  "$defs": {
+    "CognitiveFunction": {
+      "enum": [
+        "memory",
+        "reflection",
+        "planning",
+        "action",
+        "system"
+      ],
+      "title": "CognitiveFunction",
+      "type": "string"
+    },
+    "Confidence": {
+      "enum": [
+        "certain",
+        "probable",
+        "speculative"
+      ],
+      "title": "Confidence",
+      "type": "string"
+    },
+    "Severity": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "TaxonomyLabel": {
+      "properties": {
+        "cognitive_function": {
+          "$ref": "#/$defs/CognitiveFunction"
+        },
+        "error_type": {
+          "title": "Error Type",
+          "type": "string"
+        },
+        "taxonomy_version": {
+          "default": "v0",
+          "title": "Taxonomy Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cognitive_function",
+        "error_type"
+      ],
+      "title": "TaxonomyLabel",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "annotation_id": {
+      "title": "Annotation Id",
+      "type": "string"
+    },
+    "trajectory_id": {
+      "title": "Trajectory Id",
+      "type": "string"
+    },
+    "event_span": {
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "title": "Event Span",
+      "type": "array"
+    },
+    "label": {
+      "$ref": "#/$defs/TaxonomyLabel"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity"
+    },
+    "root_cause": {
+      "default": false,
+      "title": "Root Cause",
+      "type": "boolean"
+    },
+    "cascade_of": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cascade Of"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    },
+    "confidence": {
+      "$ref": "#/$defs/Confidence"
+    },
+    "proposed_category": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Proposed Category"
+    },
+    "annotator": {
+      "title": "Annotator",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "annotation_id",
+    "trajectory_id",
+    "event_span",
+    "label",
+    "severity",
+    "rationale",
+    "confidence",
+    "annotator",
+    "created_at"
+  ],
+  "title": "FailureAnnotation",
+  "type": "object"
+}
