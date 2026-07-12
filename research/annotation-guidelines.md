@@ -68,5 +68,5 @@ A failed trajectory typically gets several annotations (TRAIL average: ~5.7). A 
 ## Hygiene
 
 - Annotate only from the trajectory and task materials. Do not consult the agent's model identity, other trajectories of the same task, or leaderboard context while labeling (bias).
-- One judge pass per trajectory; judge validity comes solely from the TRAIL agreement study (`experiment-design.md`, Study 1).
+- One judge pass per trajectory; judge validity comes solely from the TRAIL agreement study (RQ2).
 - Rationales must quote or index concrete evidence — a rationale that can't cite an event is `confidence: speculative`.

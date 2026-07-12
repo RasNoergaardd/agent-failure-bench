@@ -18,9 +18,7 @@ Read `constitution.md` first — its principles are binding (design-before-execu
 
 - `research/taxonomy-v*.md` is versioned and never edited in place; changes require a new version with empirical evidence.
 - `research/annotation-guidelines.md` doubles as the LLM-judge prompt — keep it operational (definitions, examples, decision rules), not narrative.
-- `research/experiment-design.md` defines the studies for the research questions (see README) and the 3-week timeline.
-- `research/harbor-format-notes.md` records the *observed* Harbor output format; anything marked UNOBSERVED must not be asserted as fact.
-
+- The repo only contains files that assist the research question currently being worked on (now: RQ1, the taxonomy). Documents for later RQs are created when that work starts, not before.
 ## Research context
 
 The taxonomy adapts **TRAIL** (arXiv 2505.08638; error types under reasoning / system-execution / planning-coordination) and **AgentErrorTaxonomy** (arXiv 2509.25370; five cognitive modules: memory, reflection, planning, action, system). When citing facts about these works, use `research/related-work.md` and `research/taxonomy-v0.md` rather than memory.

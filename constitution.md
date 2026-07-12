@@ -9,7 +9,7 @@ This repository answers the research question: *How can a benchmark be designed 
 ## Principles
 
 ### 1. Design before execution
-No experiment runs before its design is written down (`research/experiment-design.md`): what is measured, on what data, with which metrics, and what decision the result feeds. Results that deviate from the design mean either the run or the design was wrong — record which, in the same change.
+No experiment runs before its design is written down in `research/`: what is measured, on what data, with which metrics, and what decision the result feeds. Results that deviate from the design mean either the run or the design was wrong — record which, in the same change.
 
 ### 2. Taxonomy changes are versioned and empirically justified
 The failure taxonomy (`research/taxonomy-v*.md`) is a research artifact, not a config file. Categories are added, removed, merged, or redefined **only** through a new version with a revision-log entry citing the empirical evidence (e.g., "category X unused across 42 trajectories", "escape hatch used 7 times with pattern Y").
@@ -31,3 +31,4 @@ What happened (events, outputs, test results) is stored separately from judgment
 - 2026-07-09: Initial version.
 - 2026-07-12: Scope reset for the 3-week timeline. Repository reduced to documentation only (code, schemas, and specs removed; recoverable in git history). Manual annotation dropped — the sole annotator is an LLM judge validated against TRAIL's published expert annotations. Principle 1 reworded from "Spec before code" to "Design before execution"; principles 3 and 6 reworded to be implementation-free. Purpose section updated accordingly.
 - 2026-07-12 (b): Human spot-check removed — the project contains **no** human annotation of any kind; judge validity rests solely on the TRAIL agreement study. Principle 6 amended (human annotator id dropped).
+- 2026-07-12 (c): Repo narrowed to documents serving the research question currently in progress (RQ1). Experiment-design, TRAIL-mapping, and Harbor-format notes removed (recoverable in git history); they return when RQ2+ work starts. Principle 1's file reference generalized.

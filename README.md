@@ -17,6 +17,5 @@ Agents run on [Terminal-Bench 2.0](https://www.tbench.ai) via the [Harbor](https
 - `research/related-work.md` — TRAIL, AgentErrorTaxonomy, and how this project builds on them
 - `research/taxonomy-v0.md` — the failure taxonomy (versioned; revisions require empirical evidence)
 - `research/annotation-guidelines.md` — operational definitions and decision rules; used verbatim as the LLM-judge rubric
-- `research/trail-mapping.md` — TRAIL↔taxonomy-v0 category mapping used to score judge agreement (RQ2)
-- `research/experiment-design.md` — the studies answering RQ2–RQ4, with metrics and timeline
-- `research/harbor-format-notes.md` — observed raw output format of a Harbor run
+
+The repo currently holds only what answers research question 1; documents for RQ2–RQ4 (experiment designs, TRAIL scoring mapping) are added when work on those questions starts.

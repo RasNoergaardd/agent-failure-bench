@@ -1,6 +1,6 @@
 # Failure Taxonomy v0 (draft — pre-validation)
 
-**Status:** v0, not yet empirically validated. The judge-labeled runs defined in `research/experiment-design.md` test this taxonomy against real Terminus 2 trajectories on Terminal-Bench 2.0; v1 will add/remove/merge categories with evidence cited in the revision log below. Per `constitution.md` §2, never edit categories in place — revise via a new version.
+**Status:** v0, not yet empirically validated. Judge-labeled runs on Terminal-Bench 2.0 (designed when RQ2–RQ3 work starts) will test this taxonomy; v1 will add/remove/merge categories with evidence cited in the revision log below. Per `constitution.md` §2, never edit categories in place — revise via a new version.
 
 ## Structure
 
@@ -158,7 +158,7 @@ Every error type below lists: definition, a terminal-task example, a decision ru
 
 ## Escape hatch
 
-If no category fits, annotate with code `NEW-?` plus a free-text description of the proposed category. `NEW-?` usage is tracked by the coverage analysis (`research/experiment-design.md`) and is the primary empirical signal for *adding* categories in v1.
+If no category fits, annotate with code `NEW-?` plus a free-text description of the proposed category. `NEW-?` usage is tracked by the coverage analysis and is the primary empirical signal for *adding* categories in v1.
 
 ## Deliberately excluded from source taxonomies (removal candidates confirmed at v1)
 
@@ -169,7 +169,7 @@ If no category fits, annotate with code `NEW-?` plus a free-text description of 
 | TRAIL: poor information retrieval | RAG-pipeline specific; terminal analogues are covered by MEM-1/RFL-1/PLN-3. |
 | TRAIL: auth/rate-limit subcodes | Collapsed into SYS-4; per-status-code granularity earns no analysis value at this project's scale. |
 
-The studies in `research/experiment-design.md` can *reinstate* any of these if `NEW-?` annotations or unclassifiable failures show they were needed — that outcome is itself an empirical finding for research question 1.
+Later studies can *reinstate* any of these if `NEW-?` annotations or unclassifiable failures show they were needed — that outcome is itself an empirical finding for research question 1.
 
 ## Revision log
 
