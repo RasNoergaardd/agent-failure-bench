@@ -1,23 +1,21 @@
 # Agent Failure Bench
 
-A benchmark framework that both **measures** the performance of agentic AI systems on terminal-based tasks and **systematically explains the causes of their failures**. DTU project course, 2026.
+A framework that both **measures** the performance of agentic AI systems on terminal-based tasks and **systematically explains the causes of their failures**. DTU project course, 2026. This repository is the project's research documentation — there is no code here.
 
-Agents run on [Terminal-Bench 2.0](https://www.tbench.ai) via the [Harbor](https://www.harborframework.com) harness; trajectories are normalized, then annotated with a versioned failure taxonomy that classifies each failure by **cognitive function** (memory / reflection / planning / action / system) and **location in the trajectory**, adapted from [TRAIL](https://arxiv.org/abs/2505.08638) and [AgentErrorTaxonomy](https://arxiv.org/abs/2509.25370).
+Agents run on [Terminal-Bench 2.0](https://www.tbench.ai) via the [Harbor](https://www.harborframework.com) harness. Failures are classified by an **LLM-as-judge** — validated against the expert annotations of the [TRAIL](https://arxiv.org/abs/2505.08638) benchmark — using a versioned two-axis taxonomy: **cognitive function** (memory / reflection / planning / action / system) × **error type**, plus location in the trajectory, adapted from TRAIL and [AgentErrorTaxonomy](https://arxiv.org/abs/2509.25370).
 
-## Layout
+## Research questions
 
-- `constitution.md` — binding project principles
-- `specs/` — feature specs driving all development (spec-driven)
-- `research/` — research artifacts: taxonomy (versioned), annotation guidelines, related work
-- `src/afb/` — models · ingest · annotation TUI · analysis
-- `data/` — normalized trajectories and annotations
+1. **Taxonomy** — how can existing agent failure taxonomies (TRAIL, AgentErrorTaxonomy) be adapted into a two-axis taxonomy — cognitive function and error type, located in the trajectory — for terminal-based tasks?
+2. **Judge validity** — how accurately can an LLM-as-judge classify agent failures, measured as agreement with expert annotations on the TRAIL benchmark?
+3. **Systematic vs. stochastic** — can variation across repeated runs distinguish systematic from stochastic agent failures?
+4. *(If time permits)* — do failure profiles differ across agents on the same tasks?
 
-## Development
+## Contents
 
-```sh
-uv sync
-uv run pytest
-uv run afb schema     # export JSON Schemas
-```
-
-See `CLAUDE.md` for architecture details.
+- `constitution.md` — binding research principles (versioned taxonomy, pinned runs, observation vs. interpretation)
+- `research/related-work.md` — TRAIL, AgentErrorTaxonomy, and how this project builds on them
+- `research/taxonomy-v0.md` — the failure taxonomy (versioned; revisions require empirical evidence)
+- `research/annotation-guidelines.md` — operational definitions and decision rules; used verbatim as the LLM-judge rubric
+- `research/experiment-design.md` — the studies answering RQ2–RQ4, with metrics and timeline
+- `research/harbor-format-notes.md` — observed raw output format of a Harbor run
