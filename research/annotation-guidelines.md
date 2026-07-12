@@ -1,6 +1,6 @@
 # Annotation Guidelines
 
-How a human annotator applies `taxonomy-v0.md` to a normalized trajectory. These guidelines are themselves an experimental instrument: for subquestion 2, the LLM judge receives (a version of) this document as its instructions, so keep every rule explicit and mechanical — no unstated conventions.
+How the annotator applies `taxonomy-v0.md` to a normalized trajectory. The annotator is the **LLM judge** (validated in RQ2) — there is no human annotation in this project. This document is used verbatim as the judge's instructions, so every rule must be explicit and mechanical — no unstated conventions.
 
 ## What you annotate
 
@@ -19,7 +19,7 @@ One **annotation** = one error occurrence:
 | `confidence` | `certain` / `probable` / `speculative` |
 | `proposed_category` | Free text, only with `NEW-?` |
 
-A failed trajectory typically gets several annotations (TRAIL average: ~5.7). A *successful* trajectory can also carry annotations (errors the agent recovered from) — annotate those too; they matter for the stochastic-vs-systematic analysis (subquestion 3).
+A failed trajectory typically gets several annotations (TRAIL average: ~5.7). A *successful* trajectory can also carry annotations (errors the agent recovered from) — annotate those too; they matter for the stochastic-vs-systematic analysis (RQ3).
 
 ## Procedure
 
@@ -68,6 +68,5 @@ A failed trajectory typically gets several annotations (TRAIL average: ~5.7). A 
 ## Hygiene
 
 - Annotate only from the trajectory and task materials. Do not consult the agent's model identity, other trajectories of the same task, or leaderboard context while labeling (bias).
-- One annotator per trajectory in the pilot; a subset gets a second annotator to estimate agreement (spec 004 defines the subset).
+- One judge pass per trajectory; judge validity comes solely from the TRAIL agreement study (`experiment-design.md`, Study 1).
 - Rationales must quote or index concrete evidence — a rationale that can't cite an event is `confidence: speculative`.
-- Time-box: if a trajectory exceeds ~60 minutes, note where you stopped and flag it; don't rush labels.

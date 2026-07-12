@@ -25,12 +25,12 @@ How the research questions are answered empirically. Every run that enters the a
 
 If time permits: rerun the Study 2 task set with a second Harbor-supported agent under an identical pinned config and compare failure profiles per task. Tasks where all agents fail in the same category suggest task-rooted causes; divergent profiles suggest agent-specific weaknesses.
 
-## Human spot-check (validity, not annotation)
+## Judge validity
 
-A small audit — ~20 judge labels reviewed by hand against the guidelines — is reported as a validity check. This is deliberately not a manual-annotation study; it bounds obvious judge pathologies only.
+There is no human annotation anywhere in this project. The judge's sole validation is Study 1 (agreement with TRAIL's published expert labels); Study 2's labels inherit that validity, quantified by Study 1's metrics.
 
 ## Timeline (3 weeks)
 
 1. **Week 1:** taxonomy v0 finalized as judge rubric; Study 1 (TRAIL agreement) run and analyzed.
 2. **Week 2:** screening + repeated runs; judge labeling of all failures.
-3. **Week 3:** variance analysis, spot-check, writing. Stretch study only if weeks 1–2 finish early.
+3. **Week 3:** variance analysis, writing. Stretch study only if weeks 1–2 finish early.

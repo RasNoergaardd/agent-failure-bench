@@ -24,9 +24,10 @@ A run is only citable if its configuration is recorded: harness (Harbor) version
 Success rate is a summary statistic; the unit of analysis is the failed trajectory. Design decisions (sampling, model choice, tooling) optimize for making failures inspectable, classifiable, and comparable — not for maximizing benchmark scores.
 
 ### 6. Distinguish observation from interpretation
-What happened (events, outputs, test results) is stored separately from judgments about it (annotations, labels, root-cause flags). An annotation always records its annotator — the judge model id, or a human id for spot-checks — and the two are never conflated. This separation is a precondition for the judge-agreement study (RQ2).
+What happened (events, outputs, test results) is stored separately from judgments about it (annotations, labels, root-cause flags). An annotation always records its annotator (the judge model id). This separation is a precondition for the judge-agreement study (RQ2).
 
 ## Changelog
 
 - 2026-07-09: Initial version.
 - 2026-07-12: Scope reset for the 3-week timeline. Repository reduced to documentation only (code, schemas, and specs removed; recoverable in git history). Manual annotation dropped — the sole annotator is an LLM judge validated against TRAIL's published expert annotations. Principle 1 reworded from "Spec before code" to "Design before execution"; principles 3 and 6 reworded to be implementation-free. Purpose section updated accordingly.
+- 2026-07-12 (b): Human spot-check removed — the project contains **no** human annotation of any kind; judge validity rests solely on the TRAIL agreement study. Principle 6 amended (human annotator id dropped).

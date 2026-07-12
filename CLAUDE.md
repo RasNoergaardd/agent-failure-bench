@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working in this repository.
 
+## How to communicate
+
+Be very short and direct. Answer only what was asked — no over-elaboration, no unsolicited options, background, or essays. When a request is ambiguous, ask a clarifying question first instead of answering at length.
+
 ## What this project is
 
 Agent Failure Bench: a DTU 3-week project course (2026) designing a framework that measures agentic AI performance on terminal-based tasks and systematically explains failure causes. Agents run on **Terminal-Bench 2.0** via the **Harbor** harness; failures are classified with a two-axis taxonomy (**cognitive function × error type**, plus trajectory location) by an **LLM-as-judge**, validated against the TRAIL benchmark's expert annotations.

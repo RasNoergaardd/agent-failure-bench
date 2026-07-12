@@ -1,10 +1,10 @@
-# Failure Taxonomy v0 (draft — pre-pilot)
+# Failure Taxonomy v0 (draft — pre-validation)
 
-**Status:** v0, not yet empirically validated. The pilot (spec 004) tests this taxonomy against ~30–50 real Terminus 2 trajectories on Terminal-Bench 2.0; v1 will add/remove/merge categories with evidence cited in the revision log below. Per `constitution.md` §2, never edit categories in place — revise via a new version.
+**Status:** v0, not yet empirically validated. The judge-labeled runs defined in `research/experiment-design.md` test this taxonomy against real Terminus 2 trajectories on Terminal-Bench 2.0; v1 will add/remove/merge categories with evidence cited in the revision log below. Per `constitution.md` §2, never edit categories in place — revise via a new version.
 
 ## Structure
 
-A failure label has two classification axes plus qualifiers, answering the research subquestion's requirement that each failure be classified by **the failing cognitive function** and **its location in the trajectory**:
+A failure label has two classification axes plus qualifiers, answering research question 1's requirement that each failure be classified by **the failing cognitive function** and **its location in the trajectory**:
 
 1. **Cognitive function** (Axis A): which faculty of the agent failed — `memory`, `reflection`, `planning`, `action`, `system`. Adapted from AgentErrorTaxonomy (arXiv:2509.25370); definitions rewritten for single-agent terminal work.
 2. **Error type** (within a function): the fine-grained failure mode, merged from TRAIL (arXiv:2505.08638) and AgentErrorTaxonomy, with terminal-specific additions. Codes are `<FN>-<n>` (e.g., `RFL-2`).
@@ -145,7 +145,7 @@ Every error type below lists: definition, a terminal-task example, a decision ru
 
 ### SYS-3 Environment defect
 - **Definition:** The task environment itself is broken or underspecified: missing dependencies the task assumes, broken image, flaky services, ambiguous task statement with contradictory oracle.
-- **Decision rule:** Label only with evidence the defect is environmental (e.g., the documented oracle solution would also fail). This category feeds the task-ambiguity analysis in subquestion 5.
+- **Decision rule:** Label only with evidence the defect is environmental (e.g., the documented oracle solution would also fail).
 - **Provenance:** TRAIL: environment setup errors; AET: environment error.
 
 ### SYS-4 Model/API failure
@@ -158,18 +158,18 @@ Every error type below lists: definition, a terminal-task example, a decision ru
 
 ## Escape hatch
 
-If no category fits, annotate with code `NEW-?` plus a free-text description of the proposed category. `NEW-?` usage is tracked by the coverage analysis (spec 004) and is the primary empirical signal for *adding* categories in v1.
+If no category fits, annotate with code `NEW-?` plus a free-text description of the proposed category. `NEW-?` usage is tracked by the coverage analysis (`research/experiment-design.md`) and is the primary empirical signal for *adding* categories in v1.
 
 ## Deliberately excluded from source taxonomies (removal candidates confirmed at v1)
 
 | Source category | Why excluded from v0 |
 |---|---|
-| TRAIL: task orchestration errors | Multi-agent coordination; pilot is single-agent. Revisit for subquestion 5. |
+| TRAIL: task orchestration errors | Multi-agent coordination; this project is single-agent. Future work. |
 | TRAIL: incorrect tool definition | Terminal-Bench agents get a shell, not bespoke tool definitions; harness-side defects fall under SYS-3. |
 | TRAIL: poor information retrieval | RAG-pipeline specific; terminal analogues are covered by MEM-1/RFL-1/PLN-3. |
-| TRAIL: auth/rate-limit subcodes | Collapsed into SYS-4; per-status-code granularity earns no analysis value at pilot scale. |
+| TRAIL: auth/rate-limit subcodes | Collapsed into SYS-4; per-status-code granularity earns no analysis value at this project's scale. |
 
-The pilot can *reinstate* any of these if `NEW-?` annotations or unclassifiable failures show they were needed — that outcome is itself an empirical finding for subquestion 1.
+The studies in `research/experiment-design.md` can *reinstate* any of these if `NEW-?` annotations or unclassifiable failures show they were needed — that outcome is itself an empirical finding for research question 1.
 
 ## Revision log
 
