@@ -5,3 +5,19 @@
 
 # Secrets
 .env
+
+# Python
+.venv/
+.venv-hpc/
+__pycache__/
+*.pyc
+
+# HPC job output
+logs/
+
+# Datasets. TRAIL is gated and must not be reshared outside a gated or
+# private repository, so downloaded traces stay local.
+data/
+
+# Judge output and analysis artifacts
+results/

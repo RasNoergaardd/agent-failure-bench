@@ -10,7 +10,13 @@ Be very short and direct. Answer only what was asked — no over-elaboration, no
 
 Agent Failure Bench: a DTU 3-week project course (2026) designing a framework that measures agentic AI performance on terminal-based tasks and systematically explains failure causes. Agents run on **Terminal-Bench 2.0** via the **Harbor** harness; failures are classified with a two-axis taxonomy (**cognitive function × error type**, plus trajectory location) by an **LLM-as-judge**, validated against the TRAIL benchmark's expert annotations.
 
-**This repository is documentation only.** It holds the research questions, taxonomy, guidelines, and experiment designs — no code. Earlier implementation work (Pydantic models, Harbor ingest, annotation TUI, specs, JSON schemas) was removed in the 2026-07-12 scope reset and lives in git history. Do not add code here; there is no manual annotation in scope — the annotator is the validated LLM judge.
+**The repo holds code again as of 2026-07-27.** It was documentation only between the 2026-07-12 scope reset and that date. There is still no manual annotation in scope — the annotator is the validated LLM judge.
+
+**Never restore the pre-reset code.** Earlier implementation work (Pydantic models, Harbor ingest, annotation TUI, specs, JSON schemas) lives in git history at `c6091da` and before. Rasmus's explicit instruction: the implementation is rebuilt from scratch, following the report introduction, and nothing is copied back from those commits.
+
+Current state of the code (2026-07-27): the full pipeline exists — see the module table in `README.md`. Package `agent-failure-bench`, Python >= 3.12, uv, hatchling, src layout, CLI entry point `afb`. Dependencies: pydantic, pyyaml, pyarrow, and pytest for dev; HTTP uses the standard library so the judge endpoint stays swappable.
+
+Not yet done: the judge has never been run against a real model (no inference has been paid for), and `afb/harbor.py` parses a *tolerant guess* at Harbor's output format — its field names live in `harbor.FIELDS` and must be checked against a real run directory.
 
 ## Ground rules
 
@@ -22,5 +28,14 @@ Read `constitution.md` first — its principles are binding (design-before-execu
 ## Research context
 
 The taxonomy adapts **TRAIL** (arXiv 2505.08638; error types under reasoning / system-execution / planning-coordination) and **AgentErrorTaxonomy** (arXiv 2509.25370; five cognitive modules: memory, reflection, planning, action, system). When citing facts about these works, use `research/related-work.md` and `research/taxonomy-v0.md` rather than memory.
+
+**Framing settled in the report introduction** (keep all project docs consistent with it):
+
+- Motivation: current benchmarks report success rates but do not explain failures, and existing taxonomies target tool-calling pipelines and web agents rather than terminal tasks.
+- Why terminal tasks: the trajectory is fully observable (text commands executed sequentially), and every Terminal-Bench task ships automated tests, so success/failure is unambiguous.
+- The framework has **two parts**. (1) Build the two-axis taxonomy by combining TRAIL (built for OpenTelemetry traces) and AgentErrorTaxonomy (built for embodied and web agents), adding error types for terminal-specific failure modes; then revise it empirically — labeled runs surface missing categories via an **escape-hatch label** and reveal unused ones, and that evidence drives a new taxonomy version. (2) Use an LLM judge for the labels, because no data exists on terminal-based trajectory classification and expert annotation does not scale (TRAIL reports ~110 minutes of expert time per trace). Judge accuracy is therefore established against TRAIL's expert annotations *before* its labels are used.
+- The judge does **not** replicate the TRAIL setup: it runs this project's terminal taxonomy, which merges and deduplicates the two sources' categories, adds terminal-specific error types, and supplies explicit decision rules for edge cases, written as an operational prompt (`research/annotation-guidelines.md`).
+- The validated judge is then applied to repeated Terminal-Bench 2.0 runs to measure agent performance and to test whether variation across runs separates systematic from stochastic failures.
+- The report states **four** subquestions; the DTU-exam-question idea is out of scope (future work), not a fifth subquestion in the paper.
 
 Infrastructure facts for experiment planning: models can be self-hosted (vLLM on a DTU GPU cluster); Harbor itself needs Docker and runs locally against the served endpoint.
