@@ -108,7 +108,11 @@ def cmd_agreement(args: argparse.Namespace) -> int:
         ]
         if not cases:
             continue
-        reports.append(agreement.score(cases, label=split, tolerance=args.tolerance))
+        reports.append(
+            agreement.score(
+                cases, label=split, tolerance=args.tolerance, version=args.mapping
+            )
+        )
 
     if not reports:
         print("no judged trajectories matched the TRAIL splits", file=sys.stderr)
@@ -249,6 +253,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--judged", required=True)
     p.add_argument("--splits", nargs="+", choices=SPLITS, default=list(SPLITS))
     p.add_argument("--tolerance", type=int, default=0, help="event window for a match")
+    p.add_argument(
+        "--mapping",
+        default=mapping.DEFAULT_VERSION,
+        help="TRAIL mapping version; v1 and v2 are sensitivity variants of v0",
+    )
     p.add_argument("--confusion", action="store_true")
 
     p = add("coverage", cmd_coverage, "taxonomy usage and revision candidates")

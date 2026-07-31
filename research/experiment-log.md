@@ -107,6 +107,39 @@ Localization F1 rises monotonically while function accuracy falls monotonically.
 
 ---
 
+## Sensitivity check — TRAIL mapping variants (2026-07-31)
+
+Re-scoring the stored labels of runs A and B under three readings of
+Instruction Non-compliance. No new inference; `afb agreement --mapping`.
+
+| mapping | Instruction Non-compliance is | swe_bench accuracy / kappa | gaia accuracy / kappa |
+|---|---|---|---|
+| v0 | memory (MEM-3) | 0.125 / −0.077 | 0.149 / −0.084 |
+| v1 | planning (PLN-2) | 0.167 / −0.176 | 0.149 / −0.100 |
+| v2 | no function claimed | 0.214 / −0.020 | 0.159 / −0.083 |
+
+Function-decidable pairs fall from 24 to 14 (swe_bench) and 67 to 63 (gaia)
+under v2, so the category accounts for 10 of 24 and 4 of 67 matched pairs.
+
+### Matched pairs by TRAIL category, both splits pooled (91 pairs)
+
+13 of 91 pairs agree on cognitive function; 5 of 77 code-decidable pairs agree
+on the error code. Disagreement is distributed across every category rather
+than concentrated in one. The largest single rows:
+
+| TRAIL category | expert function | judge code | n |
+|---|---|---|---|
+| Language-only | memory | RFL-3 | 7 |
+| Instruction Non-compliance | memory | ACT-3 | 5 |
+| Tool-related | reflection | RFL-3 | 5 (function agrees) |
+| Tool-related | reflection | MEM-2 | 4 |
+| Tool Selection Errors | action | RFL-3 | 4 |
+
+RFL-3 appears as the judge's code in **23 of 91 matched pairs**, drawn from
+eight different TRAIL categories. ACT-5 appears in 15, drawn from six.
+
+---
+
 ## Decisions
 
 ### D1 — match tolerance fixed at 0 events (2026-07-30)
@@ -180,6 +213,36 @@ post-hoc fitting.
 **Consequence:** the alternative mapping is to be tested and **both mappings
 reported as a sensitivity analysis**, in the manner of D1. Selecting whichever
 mapping maximises agreement, and reporting only that, would be circular.
+
+### D6 — D5 is superseded: the mapping is not the dominant cause (2026-07-31)
+
+**Evidence:** the mapping sensitivity check above, and the per-category
+breakdown of all 91 matched pairs.
+
+**Reasoning:** D5 predicted that the MEM-3 mapping drove the disagreement.
+Testing it refuted that. Every reading of Instruction Non-compliance leaves
+function accuracy between 0.125 and 0.214 and kappa negative, and the category
+covers only 4 of gaia's 67 matched pairs, so it cannot account for gaia's 23
+incorrect memory pairs. Those come instead from Language-only and Context
+Handling Failures, which the judge labels RFL-3 or ACT-5.
+
+The real pattern is that the judge's labels are **diffuse rather than
+systematically shifted**. It concentrates on a few attractor categories — RFL-3
+in 23 of 91 pairs across eight distinct TRAIL categories, ACT-5 in 15 across six
+— instead of discriminating between them. No mapping change can repair that,
+because the mapping only renames the expert side.
+
+**Consequence:** D5's sensitivity analysis stands and is reported, but its
+hypothesis is withdrawn. Two candidate causes remain and are not yet separable:
+the decision rules in `research/annotation-guidelines.md` are not discriminative
+enough, or Qwen3-14B-AWQ lacks the capacity to apply them. Running one split
+against a frontier model separates these, and must happen before any taxonomy
+or guideline revision, since revising rules against a judge that cannot follow
+them would encode the model's limits into the taxonomy.
+
+**Kept from D5:** v0 remains the mapping of record. v2 scores highest but was
+adopted for the reason `research/trail-mapping.md` gave before any run — the
+category is undecidable on the function axis — not because it scores best.
 
 ---
 
