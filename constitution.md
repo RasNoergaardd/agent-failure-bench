@@ -4,7 +4,7 @@ Non-negotiable principles for this project. Every document and experiment must c
 
 ## Purpose
 
-This repository answers the research question: *How can a benchmark be designed to both measure the performance of agentic AI systems and systematically explain the causes of their failures?* The repository is **documentation only** — research questions, taxonomy, guidelines, and experiment designs. Every document must serve a research question; anything with no traceable link to one does not belong.
+This repository answers the research question: *How can a benchmark be designed to both measure the performance of agentic AI systems and systematically explain the causes of their failures?* It holds both the research documents — research questions, taxonomy, guidelines, experiment designs and the run log — and the implementation that produces and analyses labels. Every file must serve a research question; anything with no traceable link to one does not belong.
 
 ## Principles
 
@@ -32,3 +32,4 @@ What happened (events, outputs, test results) is stored separately from judgment
 - 2026-07-12: Scope reset for the 3-week timeline. Repository reduced to documentation only (code, schemas, and specs removed; recoverable in git history). Manual annotation dropped — the sole annotator is an LLM judge validated against TRAIL's published expert annotations. Principle 1 reworded from "Spec before code" to "Design before execution"; principles 3 and 6 reworded to be implementation-free. Purpose section updated accordingly.
 - 2026-07-12 (b): Human spot-check removed — the project contains **no** human annotation of any kind; judge validity rests solely on the TRAIL agreement study. Principle 6 amended (human annotator id dropped).
 - 2026-07-12 (c): Repo narrowed to documents serving the research question currently in progress (RQ1). Experiment-design, TRAIL-mapping, and Harbor-format notes removed (recoverable in git history); they return when RQ2+ work starts. Principle 1's file reference generalized.
+- 2026-07-31: Purpose amended — the repository is no longer documentation only. Implementation returned to scope on 2026-07-27, rebuilt from scratch following the report introduction and taking nothing from the pre-reset commits. The "every document must serve a research question" test now reads "every file", and applies to code unchanged. Principle 4's pinning requirement is now discharged by `research/experiment-log.md`, added in the same change to record the first judge runs.
