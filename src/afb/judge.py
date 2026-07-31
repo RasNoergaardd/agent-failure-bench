@@ -44,12 +44,17 @@ class JudgeConfig:
     base_url: str = field(default_factory=lambda: os.environ.get("AFB_JUDGE_BASE_URL", DEFAULT_BASE_URL))
     model: str = field(default_factory=lambda: os.environ.get("AFB_JUDGE_MODEL", DEFAULT_MODEL))
     api_key_env: str = "AFB_JUDGE_API_KEY"
-    temperature: float | None = None
-    """Omitted by default.
+    temperature: float | None = field(
+        default_factory=lambda: (
+            float(value) if (value := os.environ.get("AFB_JUDGE_TEMPERATURE")) else None
+        )
+    )
+    """Omitted by default, since recent Anthropic models reject it outright.
 
-    Recent Anthropic models reject `temperature` outright, so sending it fails
-    the request. Set it only for a served model that accepts it, where it pins
-    judge variation so it cannot be confused with agent variation.
+    Set `AFB_JUDGE_TEMPERATURE=0` for a self-hosted model: vLLM otherwise honours
+    the checkpoint's `generation_config.json`, and Qwen3 ships temperature 0.6.
+    A sampling judge is not reproducible, and its variance would be mistaken for
+    agent variance in the repeated-run analysis.
     """
 
     max_tokens: int = 8192
