@@ -129,6 +129,15 @@ nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv || true
 
 # A TP that does not match the allocation either strands half the GPUs or fails
 # deep inside vLLM startup, after the weights download. Catch it here.
+#
+# Check for the tool separately: under `pipefail` a missing nvidia-smi would kill
+# the script with a bare 127, and the usual reason it is missing is that this was
+# run on the login node instead of submitted.
+if ! command -v nvidia-smi > /dev/null 2>&1; then
+    echo "nvidia-smi not found, so no GPU is visible." >&2
+    echo "Submit this with 'bsub < $0' rather than running it directly." >&2
+    exit 1
+fi
 GPU_COUNT="$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l | tr -d ' ')"
 if [ "$TP" != "$GPU_COUNT" ]; then
     echo "TP=$TP but $GPU_COUNT GPU(s) are allocated." >&2
