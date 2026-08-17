@@ -91,6 +91,46 @@ class Annotation(BaseModel):
         return self
 
 
+class Provenance(BaseModel):
+    """Who produced an annotation set, and under what configuration.
+
+    Constitution principle 6 requires every annotation to record its annotator.
+    It becomes load-bearing once more than one judge model has run the same
+    split: without it, two result files are indistinguishable, and a resumed run
+    can silently blend two annotators into one dataset.
+
+    `attempts_used` and `finish_reasons` describe the repair loop in
+    `afb.judge.judge`. A first attempt cut off mid-JSON is repaired into a
+    *smaller* annotation set, which records as a success and would otherwise be
+    invisible — one of the candidate explanations for the judge's
+    under-detection.
+    """
+
+    judge_model: str
+    """The annotator, per principle 6. A model id, not a family name."""
+
+    taxonomy_version: str = taxonomy.DEFAULT_VERSION
+    guidelines_digest: str | None = None
+    """SHA-256 of `research/annotation-guidelines.md` as the judge read it."""
+
+    char_budget: int | None = None
+    temperature: float | None = None
+
+    attempts_used: int = 1
+    finish_reasons: list[str | None] = Field(default_factory=list)
+    """One entry per attempt, in order. `length` means the response was cut off."""
+
+    @property
+    def repaired(self) -> bool:
+        """Whether this set came from a retry rather than the first response."""
+        return self.attempts_used > 1
+
+    @property
+    def truncated(self) -> bool:
+        """Whether any attempt hit the token ceiling instead of finishing."""
+        return any(reason == "length" for reason in self.finish_reasons)
+
+
 class AnnotationSet(BaseModel):
     """Every annotation the judge produced for one trajectory.
 
@@ -100,6 +140,13 @@ class AnnotationSet(BaseModel):
 
     trajectory_id: Annotated[str, Field(min_length=1)]
     annotations: list[Annotation]
+
+    provenance: Provenance | None = None
+    """Optional so the runs recorded before it existed still load unchanged.
+
+    Absent means "annotator not recorded", which is a known gap in runs A and B
+    rather than a licence to omit it: `afb.judge.judge` always sets it.
+    """
 
     @model_validator(mode="after")
     def _check(self) -> Self:

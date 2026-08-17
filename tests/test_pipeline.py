@@ -9,8 +9,8 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from afb import agreement, coverage, harbor, judge, mapping, prompt, runs, store, taxonomy
-from afb.annotation import Annotation, AnnotationSet
+from afb import agreement, cli, coverage, harbor, judge, mapping, prompt, runs, store, taxonomy
+from afb.annotation import Annotation, AnnotationSet, Provenance
 from afb.mapping import Status
 from afb.trail import TrailError, TrailLabels
 from afb.trajectory import Outcome, Trajectory
@@ -328,6 +328,30 @@ def test_tolerance_widens_the_match_window():
     assert len(agreement.score([case], tolerance=2).pairs) == 1
 
 
+def test_function_baselines_are_the_numbers_accuracy_must_beat():
+    """Runs A and B scored below uniform chance, which is a different claim from
+    scoring poorly. The baselines have to appear next to the accuracy to say so."""
+    cases = [
+        build_case([("Context Handling Failure", 1, "HIGH")], [("RFL-3", "reflection", 1, "high")]),
+        build_case([("Context Handling Failure", 2, "HIGH")], [("RFL-3", "reflection", 2, "high")]),
+        build_case([("Goal Deviation", 3, "HIGH")], [("RFL-3", "reflection", 3, "high")]),
+    ]
+    report = agreement.score(cases)
+    chance, majority = report.baselines("function")
+    assert chance == pytest.approx(0.2)  # five cognitive functions
+    # Experts said memory twice and planning once, so always answering "memory"
+    # would score 2/3. The judge said reflection every time and scored 0.
+    assert majority == pytest.approx(2 / 3)
+    assert report.classification("function")[2] == 0.0
+    assert report.summary()["function_beats_chance"] is False
+
+
+def test_baselines_survive_an_empty_report():
+    report = agreement.score([])
+    assert report.baselines("function") == (0.2, 0.0)
+    assert report.baselines("code")[0] == pytest.approx(1 / 24)
+
+
 def test_kappa_is_zero_when_agreement_is_chance():
     cases = [
         build_case([("Tool Output Misinterpretation", 1, "HIGH")], [("RFL-1", "reflection", 1, "high")]),
@@ -505,3 +529,149 @@ def test_store_round_trips_and_resumes(tmp_path):
     assert store.load(path)[0].annotations[0].error_type == "RFL-1"
     assert store.judged_ids(path) == {"t1"}
     assert store.judged_ids(tmp_path / "absent.jsonl") == set()
+
+
+def test_labels_without_provenance_still_load(tmp_path):
+    """Runs A and B were written before the annotator was recorded."""
+    path = tmp_path / "legacy.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "trajectory_id": "t1",
+                "annotations": [json.loads(make_annotation().model_dump_json())],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert store.load(path)[0].provenance is None
+    assert store.judge_models(path) == {None}
+
+
+def test_judge_models_names_each_annotator(tmp_path):
+    path = tmp_path / "judged.jsonl"
+    store.save(
+        path,
+        [
+            AnnotationSet(
+                trajectory_id=f"t{n}",
+                annotations=[make_annotation(trajectory_id=f"t{n}")],
+                provenance=Provenance(judge_model=model),
+            )
+            for n, model in enumerate(("Qwen/Qwen3-14B-AWQ", "Qwen/Qwen3-32B-AWQ"))
+        ],
+    )
+    assert store.judge_models(path) == {"Qwen/Qwen3-14B-AWQ", "Qwen/Qwen3-32B-AWQ"}
+
+
+# --- provenance -----------------------------------------------------------
+
+
+def test_judge_records_its_annotator():
+    """Principle 6: a stored label always names the model that produced it."""
+    trajectory = make_trajectory()
+    good = json.dumps({"annotations": [json.loads(make_annotation().model_dump_json())]})
+    config = judge.JudgeConfig(model="Qwen/Qwen3-32B-AWQ", char_budget=50_000)
+
+    result = judge.judge(trajectory, config, complete=lambda c, m: judge.Completion(good, "stop"))
+    assert result.provenance is not None
+    assert result.provenance.judge_model == "Qwen/Qwen3-32B-AWQ"
+    assert result.provenance.char_budget == 50_000
+    assert result.provenance.guidelines_digest == prompt.guidelines_digest()
+    assert result.provenance.attempts_used == 1
+    assert result.provenance.finish_reasons == ["stop"]
+    assert not result.provenance.repaired and not result.provenance.truncated
+
+
+def test_provenance_exposes_a_truncated_first_attempt():
+    """A response cut off mid-JSON is repaired into a smaller set, which records
+    as a success. `truncated` is what makes that visible afterwards."""
+    trajectory = make_trajectory()
+    good = json.dumps({"annotations": [json.loads(make_annotation().model_dump_json())]})
+    replies = iter(
+        [judge.Completion('{"annotations": [{"id": "a1"', "length"), judge.Completion(good, "stop")]
+    )
+
+    result = judge.judge(trajectory, judge.JudgeConfig(attempts=2), complete=lambda c, m: next(replies))
+    assert result.provenance.attempts_used == 2
+    assert result.provenance.finish_reasons == ["length", "stop"]
+    assert result.provenance.repaired and result.provenance.truncated
+
+
+def test_complete_may_return_a_bare_string():
+    """The injection point predates `Completion`; a stub need not care why the
+    model stopped."""
+    trajectory = make_trajectory()
+    good = json.dumps({"annotations": [json.loads(make_annotation().model_dump_json())]})
+    result = judge.judge(trajectory, complete=lambda c, m: good)
+    assert result.provenance.finish_reasons == [None]
+
+
+def test_extra_body_carries_the_reasoning_switch(monkeypatch):
+    monkeypatch.setenv(
+        "AFB_JUDGE_EXTRA_BODY", '{"chat_template_kwargs": {"enable_thinking": false}}'
+    )
+    assert judge.JudgeConfig().extra_body == {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_explicit_extra_body_wins_over_the_environment(monkeypatch):
+    monkeypatch.setenv("AFB_JUDGE_EXTRA_BODY", '{"chat_template_kwargs": {}}')
+    config = judge.JudgeConfig(extra_body={"reasoning": {"effort": "high"}})
+    assert config.extra_body == {"reasoning": {"effort": "high"}}
+
+
+def test_unusable_extra_body_fails_before_any_inference(monkeypatch):
+    """A silently dropped reasoning switch means a ladder rung that did not
+    actually change, which is worse than one that refused to start."""
+    monkeypatch.setenv("AFB_JUDGE_EXTRA_BODY", "enable_thinking=false")
+    with pytest.raises(judge.JudgeError, match="not valid JSON"):
+        judge.JudgeConfig()
+    monkeypatch.setenv("AFB_JUDGE_EXTRA_BODY", '["thinking"]')
+    with pytest.raises(judge.JudgeError, match="must be a JSON object"):
+        judge.JudgeConfig()
+
+
+# --- output guard ---------------------------------------------------------
+
+
+def test_output_guard_refuses_to_mix_two_judges(tmp_path, capsys):
+    path = tmp_path / "judged.jsonl"
+    store.save(
+        path,
+        [
+            AnnotationSet(
+                trajectory_id="t1",
+                annotations=[make_annotation()],
+                provenance=Provenance(judge_model="Qwen/Qwen3-14B-AWQ"),
+            )
+        ],
+    )
+    assert cli._output_guard(path, "Qwen/Qwen3-14B-AWQ", resume=True) == 0
+    assert cli._output_guard(path, "Qwen/Qwen3-32B-AWQ", resume=True) == 1
+    assert "not Qwen/Qwen3-32B-AWQ" in capsys.readouterr().err
+
+
+def test_output_guard_blocks_a_no_resume_append(tmp_path):
+    path = tmp_path / "judged.jsonl"
+    store.save(path, [AnnotationSet(trajectory_id="t1", annotations=[make_annotation()])])
+    assert cli._output_guard(path, "any-model", resume=False) == 1
+    assert cli._output_guard(tmp_path / "absent.jsonl", "any-model", resume=False) == 0
+
+
+def test_output_guard_warns_when_the_annotator_is_unrecorded(tmp_path, capsys):
+    path = tmp_path / "legacy.jsonl"
+    store.save(path, [AnnotationSet(trajectory_id="t1", annotations=[make_annotation()])])
+    assert cli._output_guard(path, "Qwen/Qwen3-14B-AWQ", resume=True) == 0
+    assert "no recorded annotator" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "model,slug",
+    [
+        ("Qwen/Qwen3-14B-AWQ", "qwen3-14b-awq"),
+        ("meta-llama/Llama-3.3-70B-Instruct-AWQ", "llama-3.3-70b-instruct-awq"),
+        ("anthropic/claude-sonnet-4.5", "claude-sonnet-4.5"),
+    ],
+)
+def test_model_slug_keeps_rungs_in_separate_files(model, slug):
+    assert cli._model_slug(model) == slug

@@ -8,6 +8,7 @@ is paraphrased in code, so what the judge reads is what the paper describes.
 This module is pure. It performs no model call.
 """
 
+import hashlib
 import json
 from functools import lru_cache
 from pathlib import Path
@@ -25,6 +26,18 @@ GUIDELINES_PATH = Path(__file__).resolve().parents[2] / "research" / "annotation
 def guidelines_text() -> str:
     """The annotation guidelines, verbatim, as the judge's procedure."""
     return GUIDELINES_PATH.read_text(encoding="utf-8").strip()
+
+
+@lru_cache
+def guidelines_digest() -> str:
+    """SHA-256 of the guidelines, recorded with every run.
+
+    The taxonomy is versioned and never edited in place, so its version string
+    identifies it. The guidelines are edited in place, yet they are the artifact
+    under test in RQ2: two runs are only comparable if the judge read the same
+    procedure. A digest is the only thing that establishes that after the fact.
+    """
+    return hashlib.sha256(guidelines_text().encode("utf-8")).hexdigest()
 
 
 def render_taxonomy(version: str = taxonomy.DEFAULT_VERSION) -> str:

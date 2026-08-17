@@ -140,6 +140,67 @@ eight different TRAIL categories. ACT-5 appears in 15, drawn from six.
 
 ---
 
+## Diagnostic — baselines and prompt length (2026-08-17)
+
+No new inference. Both parts re-read the stored labels and the prompts that
+produced them, in the manner of the sensitivity checks above.
+
+### Baselines on the classification axes
+
+Runs A and B reported accuracy with no reference point. `afb agreement` now
+prints uniform chance (the size of the label space) and the majority-class rate
+(the expert marginal, which is the best a rater can do while ignoring the
+trajectory).
+
+| Split | axis | judge | uniform chance | majority class | n |
+|---|---|---|---|---|---|
+| swe_bench | function | 0.125 | 0.200 | 0.625 | 24 |
+| swe_bench | code | 0.143 | 0.042 | 0.643 | 14 |
+| gaia | function | 0.149 | 0.200 | 0.343 | 67 |
+| gaia | code | 0.048 | 0.042 | 0.238 | 63 |
+
+On the cognitive-function axis the judge scores **below uniform chance on both
+splits**, and far below always answering the majority class. On the code axis it
+is above the 1-in-24 chance rate but roughly a quarter of the majority rate.
+
+All other run A and B figures reproduce unchanged under the new code.
+
+### Prompt length against zero-annotation traces
+
+Fixed prompt overhead, everything preceding the trajectory, is 18 297 characters
+(taxonomy 8 379, guidelines 5 853, output schema 3 242, task instructions 823),
+roughly 4 600 tokens. Runs A and B used `CHAR_BUDGET=100000` inside
+`--max-model-len 40960` with `max_tokens 8192`.
+
+| Split | prompt chars, min / median / max | over 100k | traces |
+|---|---|---|---|
+| swe_bench | 18 522 / 87 752 / 104 300 | 2 | 31 |
+| gaia | 43 259 / 60 037 / 122 732 | 12 | 117 |
+
+Comparing the traces that returned nothing against those that returned at least
+one annotation:
+
+| Split | group | n | median prompt chars | median events |
+|---|---|---|---|---|
+| swe_bench | zero annotations | 5 | 85 485 | 34 |
+| swe_bench | annotated | 26 | 87 769 | 32 |
+| gaia | zero annotations | 30 | 60 052 | 15 |
+| gaia | annotated | 87 | 59 983 | 15 |
+
+The two groups are indistinguishable on both length measures.
+
+### Provenance recorded from here on
+
+`research/annotation-guidelines.md` is unchanged since 2026-07-12, before runs A
+and B, so its digest
+`bc2c95ecbc427329647a5bd63fddd65c612d61092f4a2907b673e40d8d0744af` is the
+procedure those runs used and they remain comparable with later ones. Annotation
+sets now carry the judge model id, taxonomy version, guidelines digest, char
+budget, temperature, attempts used and per-attempt finish reasons, which
+principle 6 requires and runs A and B lack.
+
+---
+
 ## Decisions
 
 ### D1 — match tolerance fixed at 0 events (2026-07-30)
@@ -252,14 +313,23 @@ category is undecidable on the function axis — not because it scores best.
   ("serving stack version"). Both runs used the same venv at
   `$HOME/afb-work/.venv-hpc` on the DTU cluster, so it is recoverable via
   `pip show vllm` there until that venv changes. The job script should echo it.
-- **Judge under-detection unexplained.** 1.65 annotations per trace on gaia
+- **Judge under-detection partly explained.** 1.65 annotations per trace on gaia
   against 4.36 scoreable expert errors, and 26% of gaia traces returned nothing.
-  Not yet established whether this is the prompt, the model's capacity, or the
-  guidelines' evidence threshold.
+  Truncation is **excluded** as the cause: the 2026-08-17 diagnostic shows the
+  traces that returned nothing are no longer than the ones that did (gaia median
+  prompt 60 052 against 59 983 characters; swe_bench 85 485 against 87 769).
+  Remaining candidates are the guidelines' evidence threshold, the model's
+  capacity, and the repair loop, which until now recorded a response cut off
+  mid-JSON as a success. `Provenance.truncated` and `Provenance.attempts_used`
+  make the third testable on the next run; they cannot be recovered for runs A
+  and B.
 - **Judge capacity not separated from taxonomy quality.** Joint accuracy is
   roughly 0.6–0.8%, against the 5.0% TRAIL reports for Gemini 2.5 Pro on
-  swe_bench. Qwen3-14B-AWQ is far smaller, so no conclusion about the taxonomy
-  can be drawn until one split is run against a frontier model.
+  swe_bench, and the function axis is below uniform chance on both splits.
+  Qwen3-14B-AWQ is far smaller, so no conclusion about the taxonomy can be drawn
+  until judge capacity is varied. D6 called for a frontier model; no paid
+  inference is available to this project, so the substitute is a capacity ladder
+  of self-hosted open-weight judges over one split. That run is pending.
 
 ---
 

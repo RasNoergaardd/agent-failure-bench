@@ -47,14 +47,29 @@ Python ≥ 3.12, managed with `uv`. Install with `uv sync`.
 afb taxonomy                                    # the taxonomy and its TRAIL mapping status
 afb prompt --split gaia --index 0 --out p.txt   # exactly what the judge is asked
 afb judge-trail --split gaia                    # label TRAIL traces (resumable)
-afb agreement --judged results/judged-trail-gaia.jsonl --confusion
-afb coverage  --judged results/judged-trail-gaia.jsonl
+afb agreement --judged results/judged-trail-gaia-<model>.jsonl --confusion
+afb coverage  --judged results/judged-trail-gaia-<model>.jsonl
 afb judge-runs --runs <harbor-results-dir>      # label Terminal-Bench runs
-afb variance  --runs <dir> --judged results/judged-runs.jsonl
-afb profiles  --runs <dir> --judged results/judged-runs.jsonl
+afb variance  --runs <dir> --judged results/judged-runs-<model>.jsonl
+afb profiles  --runs <dir> --judged results/judged-runs-<model>.jsonl
 ```
 
-The judge endpoint is configuration, not code: `AFB_JUDGE_BASE_URL`, `AFB_JUDGE_MODEL`, and `AFB_JUDGE_API_KEY` (falling back to `OPENROUTER_API_KEY`).
+Output paths carry the judge model, because several models are run over the same
+data to separate judge capacity from taxonomy quality, and `--resume` is on by
+default. `afb` refuses to append one model's labels to another's.
+
+The judge endpoint is configuration, not code: `AFB_JUDGE_BASE_URL`,
+`AFB_JUDGE_MODEL`, and `AFB_JUDGE_API_KEY` (falling back to
+`OPENROUTER_API_KEY`). `AFB_JUDGE_TEMPERATURE` pins sampling, which a self-hosted
+model needs since vLLM otherwise honours the checkpoint's default.
+`AFB_JUDGE_MAX_TOKENS` and `AFB_JUDGE_EXTRA_BODY` cover reasoning models, whose
+thinking is billed against the same budget as the answer:
+`AFB_JUDGE_EXTRA_BODY='{"chat_template_kwargs": {"enable_thinking": false}}'`
+turns it off on vLLM.
+
+Every stored annotation set records its annotator — judge model, taxonomy
+version, guidelines digest, char budget, temperature, and the attempts and
+finish reasons behind it — as constitution principle 6 requires.
 
 ### Data
 

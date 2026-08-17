@@ -11,10 +11,11 @@
 #BSUB -o logs/afb-judge_%J.out
 #BSUB -e logs/afb-judge_%J.err
 
-# Serve Qwen3-14B with vLLM on one A100, then run the judge against it.
-# Both the server and the client live inside this job, so nothing needs a tunnel.
+# Serve an open-weight judge with vLLM on the allocated GPUs, then run the judge
+# against it. Both the server and the client live inside this job, so nothing
+# needs a tunnel.
 #
-#   bsub < scripts/judge_trail.sh                                  # swe_bench, 5 traces
+#   bsub < scripts/judge_trail.sh                                    # swe_bench, 5 traces
 #   bsub -env "all, SPLIT=gaia, LIMIT=all" < scripts/judge_trail.sh  # full GAIA split
 #
 # Pass configuration through `bsub -env`, not as a shell prefix. `bsub < script`
@@ -23,6 +24,33 @@
 #
 # Check the queue name against `bqueues` before the first submit; DTU renames
 # them occasionally, and `gpua100` is the A100 queue at time of writing.
+#
+# --- the capacity ladder ---------------------------------------------------
+# RQ2 needs judge capacity varied while the prompt, taxonomy and mapping are held
+# fixed, so that a low agreement score can be attributed to one or the other.
+# One rung per submit, each writing its own results file:
+#
+#   bsub -env "all, MODEL=Qwen/Qwen3-14B-AWQ, SPLIT=swe_bench, LIMIT=all" \
+#        < scripts/judge_trail.sh
+#
+#   bsub -env "all, MODEL=Qwen/Qwen3-32B-AWQ, SPLIT=swe_bench, LIMIT=all" \
+#        < scripts/judge_trail.sh
+#
+# A rung needing more than one GPU overrides the `#BSUB` directives below on the
+# command line, where they take precedence, and sets TP to match:
+#
+#   bsub -gpu "num=2:mode=exclusive_process" \
+#        -env "all, MODEL=..., TP=2, SPLIT=swe_bench, LIMIT=all" \
+#        < scripts/judge_trail.sh
+#
+# TP is checked against the GPUs actually allocated before vLLM starts, because
+# a mismatch either wastes half the allocation or fails deep inside startup.
+#
+# Qwen3 reasons by default. Reasoning and the answer share `max_tokens`, so a
+# thinking rung needs a larger budget as well as the switch:
+#
+#   bsub -env "all, MODEL=Qwen/Qwen3-32B-AWQ, THINKING=on, MAX_TOKENS=16384, \
+#              SPLIT=swe_bench, LIMIT=all" < scripts/judge_trail.sh
 
 set -euo pipefail
 
@@ -36,6 +64,9 @@ export AFB_JUDGE_TEMPERATURE=0
 
 # --- configuration ---------------------------------------------------------
 MODEL="${MODEL:-Qwen/Qwen3-14B-AWQ}"
+TP="${TP:-1}"                          # tensor-parallel size; must equal the GPUs allocated
+THINKING="${THINKING:-off}"            # `on` lets the model reason before answering
+MAX_TOKENS="${MAX_TOKENS:-8192}"       # shared between reasoning and the answer
 SPLIT="${SPLIT:-swe_bench}"
 # `LIMIT=all` judges the whole split. An empty string would be the natural
 # sentinel but cannot survive job submission, so require a literal word.
@@ -70,6 +101,18 @@ if [ -n "$LIMIT" ] && ! [ "$LIMIT" -gt 0 ] 2>/dev/null; then
     echo "LIMIT must be a positive integer or the word 'all', got '$LIMIT'." >&2
     exit 1
 fi
+if ! [ "$TP" -gt 0 ] 2>/dev/null; then
+    echo "TP must be a positive integer, got '$TP'." >&2
+    exit 1
+fi
+case "$THINKING" in
+    on|off) ;;
+    *) echo "THINKING must be 'on' or 'off', got '$THINKING'." >&2; exit 1 ;;
+esac
+if ! [ "$MAX_TOKENS" -gt 0 ] 2>/dev/null; then
+    echo "MAX_TOKENS must be a positive integer, got '$MAX_TOKENS'." >&2
+    exit 1
+fi
 if [ ! -f "$REPO/pyproject.toml" ]; then
     echo "REPO='$REPO' is not the checkout: no pyproject.toml there." >&2
     exit 1
@@ -79,9 +122,20 @@ cd "$REPO"
 mkdir -p logs results "$HF_HOME"
 
 echo "=== $(date) | job ${LSB_JOBID:-local} on $(hostname) ==="
-echo "model=$MODEL split=$SPLIT limit=${LIMIT:-all} repo=$REPO"
-echo "CHECK THIS LINE MATCHES WHAT YOU SUBMITTED before trusting the results."
+echo "model=$MODEL tp=$TP thinking=$THINKING max_tokens=$MAX_TOKENS"
+echo "split=$SPLIT limit=${LIMIT:-all} char_budget=$CHAR_BUDGET repo=$REPO"
+echo "CHECK THESE LINES MATCH WHAT YOU SUBMITTED before trusting the results."
 nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv || true
+
+# A TP that does not match the allocation either strands half the GPUs or fails
+# deep inside vLLM startup, after the weights download. Catch it here.
+GPU_COUNT="$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l | tr -d ' ')"
+if [ "$TP" != "$GPU_COUNT" ]; then
+    echo "TP=$TP but $GPU_COUNT GPU(s) are allocated." >&2
+    echo "Override the #BSUB directive on the command line to match, e.g." >&2
+    echo "  bsub -gpu \"num=$TP:mode=exclusive_process\" -env \"all, TP=$TP, ...\" < $0" >&2
+    exit 1
+fi
 
 # --- secrets ---------------------------------------------------------------
 # HF_TOKEN is needed only to download the gated TRAIL dataset the first time.
@@ -126,12 +180,21 @@ fi
 export PATH="$VENV/bin:$PATH"
 python -c "import afb, vllm; print('afb + vllm import OK')"
 
+# Principle 4 requires the serving stack version. Runs A and B did not record it,
+# which is why this is echoed rather than left to be recovered from the venv.
+echo "--- pinning info (principle 4) ---"
+python -c "import vllm; print('vllm', vllm.__version__)"
+python -c "import torch; print('torch', torch.__version__, 'cuda', torch.version.cuda)"
+python -c "from afb import prompt; print('guidelines sha256', prompt.guidelines_digest())"
+git -C "$REPO" rev-parse --short HEAD 2>/dev/null | sed 's/^/afb commit /' || true
+
 # --- serve the model -------------------------------------------------------
 SERVER_LOG="logs/vllm_${LSB_JOBID:-local}.log"
 echo "--- starting vLLM, log: $SERVER_LOG ---"
 vllm serve "$MODEL" \
     --port "$PORT" \
     --max-model-len "$MAX_MODEL_LEN" \
+    --tensor-parallel-size "$TP" \
     --gpu-memory-utilization 0.92 \
     > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
@@ -165,8 +228,23 @@ echo "server ready after ${SECONDS}s"
 export AFB_JUDGE_BASE_URL="http://127.0.0.1:$PORT/v1"
 export AFB_JUDGE_MODEL="$MODEL"
 export AFB_JUDGE_API_KEY="dummy"   # vLLM ignores it; afb requires one to be set
+export AFB_JUDGE_MAX_TOKENS="$MAX_TOKENS"
 
-OUT="results/judged-trail-${SPLIT}.jsonl"
+# vLLM takes the reasoning switch through the chat template, which the OpenAI
+# schema has no field for. Setting it explicitly in both directions means the
+# rung records what it did instead of inheriting the checkpoint's default.
+if [ "$THINKING" = on ]; then
+    export AFB_JUDGE_EXTRA_BODY='{"chat_template_kwargs": {"enable_thinking": true}}'
+else
+    export AFB_JUDGE_EXTRA_BODY='{"chat_template_kwargs": {"enable_thinking": false}}'
+fi
+
+# One file per rung. The judge model is part of the name because `--resume` is on
+# by default: a shared name would make rung two skip everything rung one judged.
+MODEL_SLUG="$(printf '%s' "${MODEL##*/}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9.' '-' \
+              | sed 's/-\{2,\}/-/g; s/^-//; s/-$//')"
+[ "$THINKING" = on ] && MODEL_SLUG="${MODEL_SLUG}-thinking"
+OUT="${OUT:-results/judged-trail-${SPLIT}-${MODEL_SLUG}.jsonl}"
 
 echo "--- judging $SPLIT -> $OUT ---"
 # Branching rather than expanding a possibly-empty array, which trips `set -u`.

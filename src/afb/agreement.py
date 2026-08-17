@@ -14,7 +14,7 @@ ingest.
 from collections import Counter
 from dataclasses import dataclass, field
 
-from afb import mapping
+from afb import mapping, taxonomy
 from afb.annotation import Annotation, AnnotationSet
 from afb.mapping import Status
 from afb.trail import TrailLabels
@@ -101,6 +101,41 @@ class Agreement:
         agreeing = sum(pair.severity_agrees for pair in self.pairs)
         return agreeing, len(self.pairs), _ratio(agreeing, len(self.pairs))
 
+    def _taxonomy_version(self) -> str:
+        """The version the judge said it was applying."""
+        return self.pairs[0].judge.taxonomy_version if self.pairs else taxonomy.DEFAULT_VERSION
+
+    def baselines(self, level: str) -> tuple[float, float]:
+        """Uniform chance and majority-class accuracy, for `function` or `code`.
+
+        An accuracy means nothing without the number it has to beat. Both
+        baselines are computed on the same decidable pairs the accuracy uses:
+        uniform chance from the size of the label space, majority class from the
+        expert marginal, which is the best a rater can do while ignoring the
+        trajectory entirely.
+
+        A judge below uniform chance is not discriminating poorly, it is not
+        performing the task, and that distinction decides whether the taxonomy or
+        the judge is the thing under suspicion.
+        """
+        version = self._taxonomy_version()
+        if level == "function":
+            classes = len(taxonomy.cognitive_functions(version))
+            expert = Counter(
+                p.mapped.cognitive_function
+                for p in self.pairs
+                if p.mapped.cognitive_function is not None
+            )
+        else:
+            classes = len(taxonomy.error_types(version))
+            expert = Counter(
+                p.mapped.error_type for p in self.pairs if p.mapped.status is Status.MAPPED
+            )
+
+        chance = _ratio(1, classes)
+        majority = _ratio(max(expert.values(), default=0), sum(expert.values()))
+        return chance, majority
+
     def function_kappa(self) -> float:
         """Cohen's kappa on the cognitive-function axis, over decidable pairs.
 
@@ -129,6 +164,8 @@ class Agreement:
         function_hits, function_n, function_rate = self.classification("function")
         code_hits, code_n, code_rate = self.classification("code")
         severity_hits, severity_n, severity_rate = self.severity()
+        function_chance, function_majority = self.baselines("function")
+        code_chance, code_majority = self.baselines("code")
         return {
             "label": self.label,
             "trajectories": self.trajectories,
@@ -145,9 +182,15 @@ class Agreement:
             "localization_f1": round(self.f1, 3),
             "function_accuracy": round(function_rate, 3),
             "function_decidable": function_n,
+            "function_chance": round(function_chance, 3),
+            "function_majority_class": round(function_majority, 3),
+            "function_beats_chance": function_rate > function_chance,
             "function_kappa": round(self.function_kappa(), 3),
             "code_accuracy": round(code_rate, 3),
             "code_decidable": code_n,
+            "code_chance": round(code_chance, 3),
+            "code_majority_class": round(code_majority, 3),
+            "code_beats_chance": code_rate > code_chance,
             "severity_accuracy": round(severity_rate, 3),
             "severity_scored": severity_n,
         }

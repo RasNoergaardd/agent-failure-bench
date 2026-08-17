@@ -14,6 +14,7 @@ against TRAIL first, then label real runs, then analyse them.
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -68,13 +69,62 @@ def _trail_trajectories(split: str, limit: int | None = None) -> list[tuple[Traj
     return cases
 
 
+def _model_slug(model: str) -> str:
+    """A filename-safe fragment of a model id: `Qwen/Qwen3-14B-AWQ` -> `qwen3-14b-awq`."""
+    return re.sub(r"[^a-z0-9.]+", "-", model.rsplit("/", 1)[-1].lower()).strip("-")
+
+
+def _output_guard(out: Path, model: str, resume: bool) -> int:
+    """Refuse to append one judge's labels to another's, or to duplicate a run.
+
+    Several models are run over the same split to separate judge capacity from
+    guideline quality, and `--resume` is on by default. Without this check the
+    second model skips every trajectory the first one judged, and the resulting
+    file is attributable to neither. Nothing is deleted here: judge output costs
+    GPU hours, so a collision is reported rather than resolved.
+    """
+    if not out.exists():
+        return 0
+    if not resume:
+        print(
+            f"{out} exists, and --no-resume appends rather than truncating, "
+            "which would double every trajectory. Move or remove it, or pass --out.",
+            file=sys.stderr,
+        )
+        return 1
+
+    existing = store.judge_models(out)
+    if foreign := existing - {None, model}:
+        print(
+            f"{out} already holds labels from {sorted(str(m) for m in foreign)}, not {model}. "
+            "Pass --out to keep the runs separate.",
+            file=sys.stderr,
+        )
+        return 1
+    if None in existing:
+        print(
+            f"warning: {out} holds labels with no recorded annotator, so they "
+            f"cannot be confirmed to come from {model}.",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def cmd_judge_trail(args: argparse.Namespace) -> int:
     """Label TRAIL traces so the judge can be scored against expert annotations."""
-    out = Path(args.out or f"results/judged-trail-{args.split}.jsonl")
-    done = store.judged_ids(out) if args.resume else set()
     config = judge.JudgeConfig(char_budget=args.char_budget, taxonomy_version=args.version)
     if args.model:
         config.model = args.model
+
+    # The model is part of the default name: one split judged by several models
+    # must not land in one file.
+    out = Path(
+        args.out
+        or f"results/judged-trail-{args.split}-{_model_slug(config.model)}.jsonl"
+    )
+    if _output_guard(out, config.model, args.resume):
+        return 1
+    done = store.judged_ids(out) if args.resume else set()
 
     cases = _trail_trajectories(args.split, args.limit)
     failures = 0
@@ -148,11 +198,14 @@ def cmd_judge_runs(args: argparse.Namespace) -> int:
         print(f"no run files found under {args.runs}", file=sys.stderr)
         return 1
 
-    out = Path(args.out or "results/judged-runs.jsonl")
-    done = store.judged_ids(out) if args.resume else set()
     config = judge.JudgeConfig(char_budget=args.char_budget, taxonomy_version=args.version)
     if args.model:
         config.model = args.model
+
+    out = Path(args.out or f"results/judged-runs-{_model_slug(config.model)}.jsonl")
+    if _output_guard(out, config.model, args.resume):
+        return 1
+    done = store.judged_ids(out) if args.resume else set()
 
     failures = 0
     for position, trajectory in enumerate(trajectories, start=1):
@@ -246,7 +299,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model")
     p.add_argument("--char-budget", type=int, default=prompt.DEFAULT_CHAR_BUDGET)
     p.add_argument("--out")
-    p.add_argument("--resume", action="store_true", default=True)
+    p.add_argument(
+        "--resume",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="skip trajectories already in the output file (default)",
+    )
     p.add_argument("--keep-going", action="store_true")
 
     p = add("agreement", cmd_agreement, "score judge labels against TRAIL experts")
@@ -269,7 +327,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--model")
     p.add_argument("--char-budget", type=int, default=prompt.DEFAULT_CHAR_BUDGET)
     p.add_argument("--out")
-    p.add_argument("--resume", action="store_true", default=True)
+    p.add_argument(
+        "--resume",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="skip trajectories already in the output file (default)",
+    )
     p.add_argument("--keep-going", action="store_true")
 
     p = add("variance", cmd_variance, "systematic versus stochastic failures")

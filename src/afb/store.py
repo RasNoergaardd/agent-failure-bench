@@ -47,3 +47,18 @@ def judged_ids(path: Path) -> set[str]:
     if not path.exists():
         return set()
     return {annotation_set.trajectory_id for annotation_set in iter_load(path)}
+
+
+def judge_models(path: Path) -> set[str | None]:
+    """The annotators already present in a file.
+
+    `None` stands for a set written before provenance was recorded. Used to stop
+    a resume from blending two judge models into one dataset, which would make
+    the agreement figures attributable to neither.
+    """
+    if not path.exists():
+        return set()
+    return {
+        annotation_set.provenance.judge_model if annotation_set.provenance else None
+        for annotation_set in iter_load(path)
+    }
