@@ -301,6 +301,58 @@ agreement study.
 
 ---
 
+## Run 2026-08-18 — guidelines v1, Qwen3-32B-AWQ, swe_bench
+
+The first test of the revised guidelines. Rung D's configuration exactly, with
+only the guidelines digest changed, so the pair is controlled.
+
+| Field | Value |
+|---|---|
+| Judge model | `Qwen/Qwen3-32B-AWQ` |
+| Serving stack | vLLM 0.27.1, torch 2.13.0+cu130, one A100-PCIE-40GB |
+| Sampling | temperature 0, max_tokens 8192, thinking off |
+| Context | `--max-model-len 40960`, prompt char budget 100 000 |
+| Guidelines | `a095d868…dc55c` (rung D used `bc2c95ec…0744af`) |
+| Taxonomy / mapping | v0 / v0 |
+| Data | TRAIL `swe_bench`, all 31 traces |
+| Output | `results/judged-trail-swe_bench-qwen3-32b-awq-guidelines-v1.jsonl` |
+| LSF job | *not recorded — see gaps* |
+
+### Observation
+
+31 of 31 traces judged. 157 annotations, against rung D's 268.
+
+| Metric | guidelines v0 (rung D) | guidelines v1 |
+|---|---|---|
+| judge annotations | 268 | 157 |
+| function-decidable pairs | 75 | 51 |
+| function accuracy | 0.080 | 0.157 |
+| function majority class | 0.712 | 0.451 |
+| function kappa | *unrecorded* | −0.013 |
+| code accuracy / decidable | *unrecorded* | 0.062 / 32 |
+| severity accuracy | *unrecorded* | 0.431 |
+
+Confusion, expert function to judge function, 51 pairs: action → planning 18,
+memory → planning 16, memory → action 6, planning → planning 4, action → action
+4, system → planning 1, memory → reflection 1, planning → action 1.
+
+Code usage: PLN-1 61, ACT-3 36, PLN-3 30, PLN-5 14, ACT-5 7, RFL-1 4, RFL-3 2,
+RFL-2 1, PLN-4 1, ACT-1 1. Fourteen codes unused, including all three memory
+codes and all five system codes. Escape hatch not used.
+
+Re-scored under mapping v2, no new inference: function accuracy 0.250 over 32
+decidable pairs.
+
+### Gaps
+
+- **LSF job id not recorded**, which principle 4 requires. Recoverable from
+  `logs/` by matching the output filename until those logs are cleared.
+- Localization precision, recall and F1 were not captured for this run or for
+  rung D, so the localization comparison across the guidelines change cannot be
+  made from this record.
+
+---
+
 ## Harbor format verification (2026-08-18)
 
 The first real `harbor run` executed for this project, to settle the open
@@ -520,6 +572,59 @@ this split, so the attainable ceiling is low in absolute terms. The claim
 supported here is that capacity does not explain the classification failure
 *within the range this project can serve*.
 
+### D8 — the guidelines revision helped; the mapping was manufacturing part of the disagreement (2026-08-18)
+
+**Evidence:** the guidelines-v1 run above, and its re-scoring under mapping v2.
+
+**Reasoning, part one — the revision worked, partially.** Against rung D, the
+same judge under the revised guidelines moves function accuracy 0.080 → 0.157,
+cuts annotation volume 268 → 157, drops PLN-1 from 143 to 61, and moves 22
+annotations into ACT-3, which is where the new PLN-1-versus-ACT-3 tie-breaker
+sends a correct plan carried out with wrong arguments. The evidence requirements
+and the tie-breakers did what they were written to do.
+
+The memory triggers did **not** work. Memory is still used zero times in 157
+annotations, while the experts label 23 of 51 matched pairs memory.
+
+**Reasoning, part two — much of the remaining gap is the mapping, not the judge.**
+Re-scoring the same labels under mapping v2 gives:
+
+| mapping | correct | function-decidable | accuracy |
+|---|---|---|---|
+| v0 | 8 | 51 | 0.157 |
+| v2 | 8 | 32 | 0.250 |
+
+The numerator is unchanged. The denominator falls by 19, and all 19 dropped
+pairs were ones the judge got wrong under v0. They are Instruction
+Non-compliance, which `research/trail-mapping.md` identified before any run as
+the largest ambiguity, ambiguous specifically at the cognitive-function level,
+because taxonomy v0 splits it into MEM-3 and PLN-2, which sit under different
+functions, and TRAIL records no distinction that recovers which. A share of what
+every run so far has reported as judge disagreement is therefore the mapping
+asserting a function that the expert label does not determine.
+
+**Consequence:** RQ2's function-axis figure is reported as the pre-registered
+instruction in `research/trail-mapping.md` requires — the decidable subset and
+the contested category separately, never pooled into one number. v0 remains the
+mapping of record for continuity with runs A and B, and v2 continues to be
+reported alongside it, as D1 does for match tolerance.
+
+This is deliberately **not** "adopt v2 because it scores best". The reason for
+treating the category as function-undecidable was written down before any
+judging happened, and D6 already declined to adopt v2 on score grounds. The
+0.250 figure is a consequence of that prior decision, not a reason for it.
+
+**What this does not support.** 8 of 32 against an expected 6.4 at a 0.200
+chance rate is roughly 0.7 standard deviations: the first figure this project
+has produced above chance, and not distinguishable from chance at this n. It may
+not be described as the judge beating chance. The honest statement is that the
+revision moved the function axis from clearly below chance to indistinguishable
+from it, on 32 decidable pairs.
+
+**Still open:** memory remains unused, and it is now the largest single block of
+disagreement under either mapping. Whether that is the judge, the guidelines, or
+a further mapping artefact is not yet separated.
+
 ---
 
 ## Known gaps
@@ -538,13 +643,24 @@ supported here is that capacity does not explain the classification failure
   mid-JSON as a success. `Provenance.truncated` and `Provenance.attempts_used`
   make the third testable on the next run; they cannot be recovered for runs A
   and B.
-- **Judge capacity not separated from taxonomy quality.** Joint accuracy is
-  roughly 0.6–0.8%, against the 5.0% TRAIL reports for Gemini 2.5 Pro on
-  swe_bench, and the function axis is below uniform chance on both splits.
-  Qwen3-14B-AWQ is far smaller, so no conclusion about the taxonomy can be drawn
-  until judge capacity is varied. D6 called for a frontier model; no paid
-  inference is available to this project, so the substitute is a capacity ladder
-  of self-hosted open-weight judges over one split. That run is pending.
+- **Judge capacity separated from taxonomy quality — closed by D7.** The ladder
+  showed localization improves with model size while classification does not.
+- **Memory is never used, by any judge, under any guidelines.** Zero annotations
+  across 268 (rung D) and 157 (guidelines v1), while the experts label 23 of 51
+  matched pairs memory. It is now the largest single block of disagreement, and
+  the positive triggers added in the guidelines revision did not change it.
+  Whether the cause is the judge, the guidelines, or a further mapping artefact
+  is not separated.
+- **No agent has run through Harbor with a real model.** The format is verified
+  against Harbor's ATIF schema (2026-08-18) but not against a live agent's
+  output, and D3 makes real terminal runs a precondition for RQ1's taxonomy
+  revision evidence, as well as for RQ3 and RQ4.
+- **The taxonomy and mappings were untracked until 2026-08-18.** `.gitignore`
+  carried an unanchored `data/`, so `src/afb/data/` was excluded and no commit
+  before `81cfde9` fully determined what any judge run read. Runs A through E
+  and the guidelines-v1 run are pinned by their recorded configuration but not
+  by a committed taxonomy file; the files were unchanged over that period, so
+  the records stand, but the guarantee was absent.
 
 ---
 
