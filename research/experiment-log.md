@@ -325,12 +325,22 @@ only the guidelines digest changed, so the pair is controlled.
 | Metric | guidelines v0 (rung D) | guidelines v1 |
 |---|---|---|
 | judge annotations | 268 | 157 |
+| matched pairs | 75 | 51 |
+| unmatched judge annotations | 193 | 101 |
+| localization precision | 0.280 | 0.336 |
+| localization recall | 0.315 | 0.225 |
+| localization F1 | 0.296 | 0.269 |
 | function-decidable pairs | 75 | 51 |
 | function accuracy | 0.080 | 0.157 |
 | function majority class | 0.712 | 0.451 |
 | function kappa | *unrecorded* | −0.013 |
 | code accuracy / decidable | *unrecorded* | 0.062 / 32 |
 | severity accuracy | *unrecorded* | 0.431 |
+
+The localization change is a precision-for-recall trade, which is what an
+evidence requirement should produce: precision rises 0.280 → 0.336 while recall
+falls 0.315 → 0.225, and spurious annotations fall from 193 to 101. F1 moves
+0.296 → 0.269, so the classification gain cost little localization.
 
 Confusion, expert function to judge function, 51 pairs: action → planning 18,
 memory → planning 16, memory → action 6, planning → planning 4, action → action
@@ -345,10 +355,9 @@ decidable pairs.
 
 ### Gaps
 
-- Localization precision, recall and F1 were not captured for this run or for
-  rung D, so the localization comparison across the guidelines change cannot be
-  made from this record. Both are recoverable without inference by re-running
-  `afb agreement` against the stored label files.
+- Kappa, code accuracy and severity accuracy were not captured for rung D, so
+  those three rows compare against nothing. Recoverable without inference by
+  re-running `afb agreement` against rung D's stored labels.
 
 ---
 
@@ -581,6 +590,12 @@ cuts annotation volume 268 → 157, drops PLN-1 from 143 to 61, and moves 22
 annotations into ACT-3, which is where the new PLN-1-versus-ACT-3 tie-breaker
 sends a correct plan carried out with wrong arguments. The evidence requirements
 and the tie-breakers did what they were written to do.
+
+The cost is a precision-for-recall trade on localization, not a regression:
+precision 0.280 → 0.336, recall 0.315 → 0.225, F1 0.296 → 0.269, with spurious
+annotations falling 193 → 101. Since D7 established localization as the axis
+that already works and classification as the one that does not, buying 0.077 of
+function accuracy for 0.027 of F1 is the trade worth making.
 
 The memory triggers did **not** work. Memory is still used zero times in 157
 annotations, while the experts label 23 of 51 matched pairs memory.
