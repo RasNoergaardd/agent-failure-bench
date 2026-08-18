@@ -176,6 +176,15 @@ def cmd_agreement(args: argparse.Namespace) -> int:
             for (expert, judge_function), count in report.confusion().most_common():
                 mark = "" if expert == judge_function else "   <-"
                 print(f"    {expert:12} -> {judge_function:12} {count:4}{mark}")
+        if args.by_category:
+            print("\n  TRAIL category -> judge functions (pairs, agreeing/decidable)")
+            for category, row in report.by_category().items():
+                labels = ", ".join(f"{f} {n}" for f, n in row["judge_functions"])
+                print(
+                    f"    {category[:34]:34} n={row['pairs']:3}  "
+                    f"expert={str(row['expert_function'] or '-'):10} "
+                    f"agree {row['function_agreeing']}/{row['function_decidable']}  {labels}"
+                )
     return 0
 
 
@@ -317,6 +326,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="TRAIL mapping version; v1 and v2 are sensitivity variants of v0",
     )
     p.add_argument("--confusion", action="store_true")
+    p.add_argument(
+        "--by-category",
+        action="store_true",
+        help="break matched pairs down by TRAIL expert category, to separate a "
+        "judge disagreement from an artifact of how that category was mapped",
+    )
 
     p = add("coverage", cmd_coverage, "taxonomy usage and revision candidates")
     p.add_argument("--judged", nargs="+", required=True)

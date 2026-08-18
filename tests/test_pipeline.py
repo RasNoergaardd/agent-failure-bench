@@ -353,6 +353,26 @@ def test_baselines_survive_an_empty_report():
     assert report.baselines("code")[0] == pytest.approx(1 / 24)
 
 
+def test_by_category_separates_a_mapping_artifact_from_a_disagreement():
+    """One expert category dominating a function hides why that function fails."""
+    cases = [
+        build_case([("Instruction Non-compliance", 1, "HIGH")], [("PLN-1", "planning", 1, "high")]),
+        build_case([("Instruction Non-compliance", 2, "HIGH")], [("PLN-1", "planning", 2, "high")]),
+        build_case([("Context Handling Failure", 3, "HIGH")], [("MEM-1", "memory", 3, "high")]),
+    ]
+    report = agreement.score(cases)
+    rows = report.by_category()
+
+    # Both categories map to memory, so the function-level confusion cannot tell
+    # them apart; the category breakdown can.
+    assert rows["Instruction Non-compliance"]["pairs"] == 2
+    assert rows["Instruction Non-compliance"]["function_agreeing"] == 0
+    assert rows["Instruction Non-compliance"]["judge_functions"] == [("planning", 2)]
+    # Grouped under the mapping's canonical name, so TRAIL's singular and plural
+    # spellings of one category do not split its counts.
+    assert rows["Context Handling Failures"]["function_agreeing"] == 1
+
+
 def test_kappa_is_zero_when_agreement_is_chance():
     cases = [
         build_case([("Tool Output Misinterpretation", 1, "HIGH")], [("RFL-1", "reflection", 1, "high")]),

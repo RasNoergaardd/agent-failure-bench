@@ -160,6 +160,37 @@ class Agreement:
             if p.mapped.cognitive_function is not None
         )
 
+    def by_category(self) -> dict[str, dict[str, object]]:
+        """Per TRAIL expert category: how many pairs, and how the judge labelled them.
+
+        `confusion` reports the function the *mapping* assigned, which hides
+        which expert category produced it. When one category dominates a
+        function, an apparent disagreement about that function can be an
+        artifact of how that category was mapped rather than a judgment the
+        judge got wrong.
+        """
+        grouped: dict[str, list[Pair]] = {}
+        for pair in self.pairs:
+            # The canonical name from the mapping, not the raw label: TRAIL
+            # spells categories inconsistently ("Formatting Error" against
+            # "Formatting Errors"), which would split one category's counts.
+            name = pair.mapped.trail_category or pair.expert_category
+            grouped.setdefault(name, []).append(pair)
+
+        report = {}
+        for category, pairs in sorted(grouped.items(), key=lambda kv: -len(kv[1])):
+            decided = [p for p in pairs if p.function_agrees is not None]
+            report[category] = {
+                "pairs": len(pairs),
+                "expert_function": pairs[0].mapped.cognitive_function,
+                "function_decidable": len(decided),
+                "function_agreeing": sum(p.function_agrees for p in decided),
+                "judge_functions": Counter(
+                    p.judge.cognitive_function for p in pairs
+                ).most_common(),
+            }
+        return report
+
     def summary(self) -> dict[str, object]:
         function_hits, function_n, function_rate = self.classification("function")
         code_hits, code_n, code_rate = self.classification("code")
