@@ -316,7 +316,7 @@ only the guidelines digest changed, so the pair is controlled.
 | Taxonomy / mapping | v0 / v0 |
 | Data | TRAIL `swe_bench`, all 31 traces |
 | Output | `results/judged-trail-swe_bench-qwen3-32b-awq-guidelines-v1.jsonl` |
-| LSF job | *not recorded — see gaps* |
+| LSF job | 29135597 |
 
 ### Observation
 
@@ -345,11 +345,10 @@ decidable pairs.
 
 ### Gaps
 
-- **LSF job id not recorded**, which principle 4 requires. Recoverable from
-  `logs/` by matching the output filename until those logs are cleared.
 - Localization precision, recall and F1 were not captured for this run or for
   rung D, so the localization comparison across the guidelines change cannot be
-  made from this record.
+  made from this record. Both are recoverable without inference by re-running
+  `afb agreement` against the stored label files.
 
 ---
 
