@@ -201,6 +201,106 @@ principle 6 requires and runs A and B lack.
 
 ---
 
+## Capacity ladder — swe_bench (2026-08-17)
+
+D6 required judge capacity to be varied before any guideline revision. No paid
+frontier inference is available to this project, so capacity is varied across
+self-hosted open-weight judges instead. Taxonomy v0, mapping v0, tolerance 0,
+temperature 0, char budget 100 000, swe_bench, in every rung.
+
+| Rung | Judge | Thinking | max_tokens | vLLM | LSF job |
+|---|---|---|---|---|---|
+| A | Qwen3-14B-AWQ | not controlled | 8192 | unrecorded | 28984526 |
+| C | Qwen3-14B-AWQ | on | 14336 | 0.26.0 | 29128736 |
+| D | Qwen3-32B-AWQ | off | 8192 | 0.27.1 | 29132516 |
+| E | Qwen3-14B-AWQ | off | 8192 | 0.27.1 | 29132705 |
+
+### Observation
+
+| Rung | traces | annotations | matched | F1 | function acc | decidable |
+|---|---|---|---|---|---|---|
+| A | 31/31 | 77 | 24 | 0.152 | 0.125 | 24 |
+| C | 31/31 | 84 | 17 | 0.106 | 0.118 | 17 |
+| D | 31/31 | 268 | 75 | 0.296 | 0.080 | 75 |
+| E | 30/31 | 229 | 40 | 0.175 | 0.075 | 40 |
+
+Uniform chance on the function axis is 0.200 throughout. No rung reaches it.
+
+**D and E are the controlled pair**: identical serving stack, thinking setting
+and token budget, differing only in model size. From E to D, matched pairs rise
+40 → 75 and localization F1 0.175 → 0.296, while function accuracy moves 0.075 →
+0.080 (3 of 40 against 6 of 75).
+
+Rung D confusion, expert function against judge function, 75 pairs: action →
+planning 34, memory → planning 22, planning → planning 6, memory → reflection 5,
+action → reflection 3, memory → action 2, planning → reflection 2, reflection →
+planning 1. The judge names planning in 63 of 75 pairs; the experts name it in 8.
+Answering "action" for every pair would have scored 37/75 = 0.493.
+
+Rung D code usage, 268 annotations: PLN-1 143, PLN-3 50, RFL-1 27, PLN-5 15,
+ACT-3 14, ACT-5 8, RFL-2 5, ACT-1 3, PLN-4 2, RFL-3 1. Fourteen of 24 codes
+unused, including all three memory codes and all five system codes.
+
+**The dominant code differs by rung.** RFL-3 in run A (47 of 193 on gaia,
+6 of 77 here), PLN-5 and PLN-3 in rung C (18 and 16 of 84), PLN-1 in rung D
+(143 of 268, 53%). Rung D used RFL-3 once.
+
+### Gaps in this ladder
+
+- **Rung E judged 30 of 31 traces.** The failure was not diagnosed before the
+  guidelines were revised, so E's figures rest on a subset that excludes one
+  trace and are not exactly comparable to D's.
+- **Rungs A and C ran vLLM 0.26.0; D and E ran 0.27.1** (torch 2.11.0 → 2.13.0),
+  because the virtual environment was rebuilt when the caches moved to
+  `/work3/s225786`. A against E is therefore not a clean thinking-on/off
+  comparison. D against E is clean.
+- **Run A's thinking mode was never set.** Rung C (thinking on) produced 84
+  annotations and rung E (thinking off) produced 229, so run A's 77 is
+  consistent with thinking having been on by default. Runs A and B were
+  therefore probably thinking-on runs, which was not recorded at the time.
+- **A run at max_tokens 16384 (job 29128252) is discarded**: 5 of 31 traces
+  exceeded the 40 960-token context and failed, and the five were the longest,
+  so the surviving 26 are a biased subset. A subsequent attempt to raise
+  `--max-model-len` to 49152 (job 29128633) was refused by vLLM, since 40960 is
+  Qwen3's `max_position_embeddings` and cannot be exceeded safely.
+
+---
+
+## Guidelines revision (2026-08-17)
+
+`research/annotation-guidelines.md` changed from digest
+`bc2c95ec…0744af` to `a095d868…dc55c`. Prompt overhead grows from 18 297 to
+24 680 characters (~4 574 to ~6 170 tokens); the longest swe_bench prompt is now
+~27 670 tokens, which leaves room for 8 192 output tokens inside the 40 960
+context but no longer for 14 336.
+
+Four changes, each traceable to an observation above:
+
+1. **An ordered test for the cognitive function axis.** The file previously told
+   the judge to "choose cognitive function first" and gave no procedure for
+   doing so; all eight tie-breakers were code-versus-code. The axis without a
+   decision rule is the axis scoring 0.080.
+2. **Planning is no longer reachable as a residual.** The test requires a
+   positive showing that the approach could not have worked even if executed
+   perfectly, and directs unplaceable errors to `NEW-?` instead.
+3. **Evidence requirements for PLN-1, PLN-5 and RFL-3**, the three codes that can
+   be narrated onto any failed trajectory. PLN-1 now requires quoting both the
+   requirement and the contradicting agent statement, and explicitly rejects the
+   circular reading "the task failed, so the agent misunderstood it".
+4. **Positive triggers for memory**, plus a re-check pass when every annotation
+   in a trajectory carries the same function or code.
+
+The taxonomy itself is unchanged. Under principle 2 a category change needs a new
+version, and under D3 the evidence for one must come from Terminal-Bench rather
+than TRAIL; these are decision rules for applying v0, which
+`CLAUDE.md` assigns to the guidelines.
+
+No base rate was written into the guidelines. Telling the judge how often experts
+use each function would fit the prompt to the evaluation set and invalidate the
+agreement study.
+
+---
+
 ## Decisions
 
 ### D1 — match tolerance fixed at 0 events (2026-07-30)
@@ -304,6 +404,46 @@ them would encode the model's limits into the taxonomy.
 **Kept from D5:** v0 remains the mapping of record. v2 scores highest but was
 adopted for the reason `research/trail-mapping.md` gave before any run — the
 category is undecidable on the function axis — not because it scores best.
+
+### D7 — D6's gate is discharged: capacity is not the cause of the classification failure (2026-08-17)
+
+**Evidence:** the capacity ladder above, rungs D and E in particular.
+
+**Reasoning:** D6 left two candidate causes and forbade revising anything until
+they were separated — the guidelines are not discriminative enough, or
+Qwen3-14B-AWQ lacks the capacity to apply them. D6 asked for a frontier model;
+none is available, so capacity was varied within the self-hosted range instead.
+
+Doubling the judge from 14B to 32B, with every other variable fixed, separates
+the two axes rather than lifting both:
+
+- **Localization is capacity-limited.** Matched pairs 40 → 75, F1 0.175 → 0.296,
+  with precision roughly held. The larger judge genuinely finds more of the
+  errors the experts found.
+- **Classification is not.** Function accuracy 0.075 → 0.080, both below the
+  0.200 uniform baseline and far below the 0.588–0.712 majority-class rate.
+
+The second candidate is therefore refuted for the classification axis: more
+capacity buys localization and buys nothing on either label axis.
+
+Two further observations point at the rules rather than the model. The judge
+collapses onto a single answer — planning in 63 of 75 matched pairs, where
+answering "action" throughout would have scored 0.493 — and **the identity of
+the sink category changes with the model** (RFL-3 in run A, PLN-5/PLN-3 in rung
+C, PLN-1 in rung D). A taxonomy whose definitions constrained the choice would
+produce a similar distribution regardless of which model applied it.
+
+**Consequence:** guideline revision is unblocked and has been carried out
+(above). The revised guidelines must now be tested by re-running rung D's exact
+configuration, since the whole ladder was labelled under the old digest. Until
+that run exists, no claim about the revision's effect is supported.
+
+**Limitation, to be stated in the report:** the ladder spans 14B to 32B. A
+plateau across that range does not exclude a frontier judge behaving
+differently, and TRAIL reports only 5.0% joint accuracy for Gemini 2.5 Pro on
+this split, so the attainable ceiling is low in absolute terms. The claim
+supported here is that capacity does not explain the classification failure
+*within the range this project can serve*.
 
 ---
 
