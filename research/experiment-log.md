@@ -361,6 +361,75 @@ decidable pairs.
 
 ---
 
+## Category breakdown and guidelines v2 (2026-08-18)
+
+`afb agreement --by-category` reports the TRAIL category behind each matched
+pair, which `--confusion` cannot: confusion shows the function the *mapping*
+assigned, and that assignment was itself in question.
+
+### Observation — guidelines-v1 run, 51 matched pairs
+
+| TRAIL category | expert function | pairs | agreeing | judge's labels |
+|---|---|---|---|---|
+| Formatting Errors | action | 22 | 4 | planning 18, action 4 |
+| Instruction Non-compliance | memory | 19 | 0 | planning 14, action 4, reflection 1 |
+| Context Handling Failures | memory | 4 | 0 | action 2, planning 2 |
+| Resource Abuse | planning | 3 | 2 | planning 2, action 1 |
+| Incorrect Problem Identification | planning | 2 | 2 | planning 2 |
+| Resource Exhaustion | system | 1 | 0 | planning 1 |
+
+### The memory question is answered, and it is mostly not about memory
+
+Of the 23 pairs the mapping calls memory, **19 are Instruction Non-compliance**
+and only 4 are Context Handling Failures. Removing those 19 gives exactly the 32
+function-decidable pairs that mapping v2 reports, confirming D8's arithmetic
+directly rather than by inference.
+
+So the standing gap "memory is never used" is, on this split, 83% the contested
+mapping and 4 pairs of genuine disagreement. It is not grounds for another
+revision of the memory rules: tuning the prompt against those 19 pairs would be
+tuning against a mapping decision, not against judge behaviour. The memory
+triggers added in guidelines v1 are left in place and not extended.
+
+### The largest genuine disagreement is Formatting Errors
+
+22 of 51 pairs, 4 agreeing, and the judge answers planning 18 times. This is not
+a mapping artifact: Formatting Errors maps cleanly to ACT-5, whose definition
+already covers "a produced artifact is malformed relative to its format
+requirements". The judge sees a bad result and reasons backwards to a bad plan.
+
+Guidelines v2 (`cf52da01…9ab7d30`) therefore adds one rule and sharpens two:
+
+- Step 4 of the function test now states that a wrongly formed output is an
+  action error **even when the work behind it was also wrong**, and that the
+  artifact is judged against its format requirement before asking whether the
+  agent answered the right question.
+- A PLN-1 versus ACT-5 tie-breaker: wrong *shape* is ACT-5, wrong *question* is
+  PLN-1, and a bad result is not by itself evidence of a bad plan.
+- The ACT-1/3/5 tie-breaker now says the artifact includes the task's final
+  answer, not only files the agent wrote.
+
+The longest swe_bench prompt is now ~27 878 tokens, leaving 8 192 output tokens
+inside the 40 960 ceiling.
+
+### Methodological risk: three revisions against one split
+
+Guidelines v1 and v2 were both written after inspecting swe_bench results, which
+is iterative fitting to the evaluation set. Two things limit the damage, and
+both must be stated in the report rather than relied on silently:
+
+1. Every rule added so far enforces a distinction the taxonomy **already**
+   defines — ACT-5's definition already says "malformed relative to its format
+   requirements". The revisions make v0's own boundaries operational; they do
+   not introduce categories fitted to TRAIL.
+2. **`gaia` has not been used for any revision.** All 117 gaia traces were last
+   judged on 2026-07-30 under guidelines v0, and no gaia result has informed a
+   rule. It is therefore a held-out split, and the final guidelines must be
+   validated on it before any agreement figure is reported as the project's
+   answer to RQ2.
+
+---
+
 ## Harbor format verification (2026-08-18)
 
 The first real `harbor run` executed for this project, to settle the open

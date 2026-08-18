@@ -52,7 +52,10 @@ the earlier test already claimed.
 4. **Action** — was the intention correct but the execution wrong: malformed
    syntax, wrong arguments, a badly formed artifact? Ask whether a competent
    operator with the *same* intention would have typed something different. If
-   yes, this is action, not planning.
+   yes, this is action, not planning. **A wrongly formed output is an action
+   error even when the work behind it was also wrong**: judge the artifact
+   against its format requirement first, and only then ask whether the agent was
+   answering the right question at all.
 5. **Planning** — could this course of action not have achieved the goal *even if
    every step had been executed perfectly*? Planning requires that positive
    showing.
@@ -101,10 +104,11 @@ look for them actively rather than reaching for memory only when nothing else fi
 | MEM-2 vs RFL-5 | False claim about what was *observed* (MEM-2) vs. about a *check the agent performed* (RFL-5). |
 | MEM-3 vs PLN-1/PLN-2 | Did the agent ever behave consistently with the requirement? Yes → MEM-3 (drift). No → PLN-1 if misread, PLN-2 if ignored. Both PLN codes still require their quoted evidence above. |
 | PLN-1 vs ACT-3 | Was the goal itself wrong (PLN-1) or the goal right and the command wrong (ACT-3)? A correct plan carried out with wrong arguments is ACT-3. |
+| PLN-1 vs ACT-5 | **Wrong shape or wrong question?** If the artifact addresses the right problem but is malformed against its format requirement — invalid JSON or YAML, code that does not parse, the answer given in the wrong units, precision, casing, or field names, output written to the wrong place — that is ACT-5. PLN-1 applies only when the artifact addresses a *different* problem. A bad result is not evidence of a bad plan: check the format requirement before concluding the agent misunderstood the task. |
 | PLN-1 vs PLN-3 | A single wrong reading of the task is PLN-1. Repeating an approach that has already failed is PLN-3, even when the original reading was also wrong — annotate both and link the repetition with `cascade_of`. |
 | RFL-2 vs RFL-3 | Did the agent *judge* progress incorrectly (RFL-2) or simply never run an available check (RFL-3)? RFL-3 requires naming the concrete check that was skipped. |
 | ACT-2 vs PLN-5 | Wrong instrument for a feasible step (ACT-2) vs. a step no instrument could perform in this environment (PLN-5). |
-| ACT-1/3/5 among themselves | Shell-syntax malformed → ACT-1. Command runs but wrong args → ACT-3. Produced *artifact* malformed → ACT-5. |
+| ACT-1/3/5 among themselves | Shell-syntax malformed → ACT-1. Command runs but wrong args → ACT-3. Produced *artifact* malformed → ACT-5. The artifact includes the task's final answer, not only files the agent wrote. |
 | PLN-3 vs RFL-4 | The repetition itself is PLN-3; a wrong *diagnosis* driving varied-but-misdirected fixes is RFL-4. Both can co-occur (RFL-4 as root cause, PLN-3 as cascade). |
 | Any agent error vs SYS-3 | Before labeling SYS-3, state what evidence shows a correct agent would also have failed (e.g., missing dependency with no offline alternative). |
 
