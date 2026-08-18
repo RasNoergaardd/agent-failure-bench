@@ -5,6 +5,7 @@ dataset is not present locally.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -410,46 +411,153 @@ def test_proposals_are_clustered_by_wording():
 # --- harbor ---------------------------------------------------------------
 
 
-def test_harbor_reads_chat_shaped_runs():
-    record = {
-        "task_id": "fix-port",
-        "run_id": 3,
-        "agent": "terminus-2",
-        "resolved": False,
-        "instruction": "Fix the port.",
-        "messages": [
-            {"role": "assistant", "content": "I will look at the config."},
-            {"role": "tool", "content": "port: 8081"},
-            {"role": "system", "content": "step budget exhausted"},
+FIXTURE = Path(__file__).parent / "fixtures" / "harbor-trial"
+"""A real Harbor trial layout.
+
+`agent/trajectory.json` was produced by Harbor's own ATIF models (harbor 0.18.0)
+so the schema is authoritative rather than assumed; `result.json` is a real
+`harbor run` output with its verdict and agent identity edited to describe a
+failing terminus-2 run.
+"""
+
+
+def write_trial(root: Path, *, result: dict, atif: dict | None) -> Path:
+    """A trial directory in Harbor's layout: result.json plus agent/trajectory.json."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "result.json").write_text(json.dumps(result), encoding="utf-8")
+    if atif is not None:
+        (root / "agent").mkdir(exist_ok=True)
+        (root / "agent" / "trajectory.json").write_text(json.dumps(atif), encoding="utf-8")
+    return root
+
+
+def atif_document(**overrides) -> dict:
+    base = {
+        "schema_version": "ATIF-v1.7",
+        "agent": {"name": "terminus-2", "version": "2.0.0"},
+        "steps": [
+            {"step_id": 1, "source": "user", "message": "Fix the port."},
+            {
+                "step_id": 2,
+                "source": "agent",
+                "message": "Checking the config.",
+                "tool_calls": [
+                    {"tool_call_id": "c1", "function_name": "run_command",
+                     "arguments": {"command": "grep port app.conf"}}
+                ],
+                "observation": {"results": [{"source_call_id": "c1", "content": "port: 8081"}]},
+            },
         ],
     }
-    trajectory = harbor.to_trajectory(record)
-    assert trajectory.trajectory_id == "fix-port::3"
+    return base | overrides
+
+
+def test_harbor_reads_a_real_atif_trial():
+    """The fixture is Harbor's own schema output, so this pins the real format."""
+    trajectories = harbor.load_dir(FIXTURE)
+    assert len(trajectories) == 1
+    trajectory = trajectories[0]
+
+    assert trajectory.trajectory_id == "terminal-bench/build-wheel::build-wheel__attempt1"
     assert trajectory.outcome is Outcome.FAILURE
-    assert [e.kind.value for e in trajectory.events] == ["agent", "observation", "system"]
+    assert trajectory.task_instruction.startswith("Build a wheel")
     assert trajectory.metadata["agent"] == "terminus-2"
+    assert trajectory.metadata["model"] == "Qwen/Qwen3-32B-AWQ"
+
+    kinds = [e.kind.value for e in trajectory.events]
+    assert kinds.count("action") == 3
+    assert [e.index for e in trajectory.events] == list(range(len(trajectory.events)))
+    assert any(e.content == "cd /app && python -m build --wheel" for e in trajectory.events)
 
 
-def test_harbor_splits_command_and_output():
-    record = {
-        "task_id": "t",
-        "success": True,
-        "instruction": "do it",
-        "steps": [{"command": "ls -la", "output": "file.txt"}],
-    }
-    trajectory = harbor.to_trajectory(record)
-    assert [e.kind.value for e in trajectory.events] == ["action", "observation"]
-    assert [e.index for e in trajectory.events] == [0, 1]
-    assert trajectory.outcome is Outcome.SUCCESS
+def test_harbor_splits_one_step_into_message_command_and_output(tmp_path):
+    """A single ATIF step becomes several events — how a terminal run reads."""
+    trial = write_trial(tmp_path / "t", result={"task_name": "x", "trial_name": "1"},
+                        atif=atif_document())
+    events = harbor.load_dir(trial)[0].events
+    assert [e.kind.value for e in events] == [
+        "observation",  # the user step carrying the instruction
+        "agent",
+        "action",
+        "observation",
+    ]
+    assert events[2].content == "grep port app.conf"
 
 
-def test_harbor_reads_a_directory(tmp_path):
-    (tmp_path / "a.json").write_text(json.dumps({
-        "task_id": "x", "run_id": 1, "messages": [{"role": "assistant", "content": "hi"}]}))
-    (tmp_path / "b.jsonl").write_text("\n".join(json.dumps({
-        "task_id": "y", "run_id": n, "messages": [{"role": "assistant", "content": "hi"}]})
-        for n in range(2)))
-    assert len(harbor.load_dir(tmp_path)) == 3
+def test_harbor_keeps_reasoning_as_a_labelled_event(tmp_path):
+    """A reflection failure cannot be judged without what the agent believed."""
+    atif = atif_document()
+    atif["steps"][1]["reasoning_content"] = "The port is probably wrong."
+    trial = write_trial(tmp_path / "t", result={"task_name": "x", "trial_name": "1"}, atif=atif)
+    contents = [e.content for e in harbor.load_dir(trial)[0].events]
+    assert "[reasoning] The port is probably wrong." in contents
+
+
+def test_harbor_skips_a_trial_with_no_trajectory(tmp_path):
+    """`oracle` and `nop` produce no ATIF file; a job must not fail on them."""
+    write_trial(tmp_path / "oracle-trial", result={"task_name": "x"}, atif=None)
+    assert harbor.load_dir(tmp_path) == []
+    assert harbor.read_trial(tmp_path / "oracle-trial") is None
+
+
+def test_harbor_reads_a_whole_job_directory(tmp_path):
+    for n in range(3):
+        write_trial(tmp_path / "job" / f"trial-{n}",
+                    result={"task_name": "task", "trial_name": str(n)}, atif=atif_document())
+    trajectories = harbor.load_dir(tmp_path)
+    assert len(trajectories) == 3
+    assert [t.metadata["run_id"] for t in trajectories] == ["0", "1", "2"]
+
+
+@pytest.mark.parametrize(
+    "result,expected",
+    [
+        ({"verifier_result": {"rewards": {"reward": 1.0}}}, Outcome.SUCCESS),
+        ({"verifier_result": {"rewards": {"reward": 0.0}}}, Outcome.FAILURE),
+        ({"verifier_result": {"rewards": {}}}, Outcome.UNKNOWN),
+        ({}, Outcome.UNKNOWN),
+        # A crashed trial is not the agent failing the task.
+        ({"verifier_result": {"rewards": {"reward": 0.0}},
+          "exception_info": {"type": "Timeout"}}, Outcome.UNKNOWN),
+    ],
+)
+def test_harbor_reads_the_verifier_verdict(tmp_path, result, expected):
+    trial = write_trial(tmp_path / "t", result={"task_name": "x", **result}, atif=atif_document())
+    assert harbor.load_dir(trial)[0].outcome is expected
+
+
+def test_harbor_warns_on_an_unknown_atif_version(tmp_path):
+    """The format has only added optional fields so far: warn, do not drop."""
+    trial = write_trial(tmp_path / "t", result={"task_name": "x"},
+                        atif=atif_document(schema_version="ATIF-v9.9"))
+    with pytest.warns(UserWarning, match="unrecognized ATIF version"):
+        trajectories = harbor.load_dir(trial)
+    assert len(trajectories) == 1
+
+
+def test_harbor_renders_a_multi_argument_tool_call(tmp_path):
+    """No argument may be silently dropped: the judge annotates what it reads."""
+    atif = atif_document()
+    atif["steps"][1]["tool_calls"] = [
+        {"tool_call_id": "c1", "function_name": "run_command",
+         "arguments": {"command": "pytest", "timeout": 30}}
+    ]
+    trial = write_trial(tmp_path / "t", result={"task_name": "x"}, atif=atif)
+    action = next(e for e in harbor.load_dir(trial)[0].events if e.kind.value == "action")
+    assert action.content.startswith("pytest")
+    assert "timeout" in action.content
+
+
+def test_harbor_names_an_omitted_image(tmp_path):
+    """An elision is always visible, so no error is inferred from removed content."""
+    atif = atif_document()
+    atif["steps"][1]["message"] = [
+        {"type": "text", "text": "Here is the screen."},
+        {"type": "image", "source": {"media_type": "image/png", "path": "s.png"}},
+    ]
+    trial = write_trial(tmp_path / "t", result={"task_name": "x"}, atif=atif)
+    contents = "\n".join(e.content for e in harbor.load_dir(trial)[0].events)
+    assert "[image omitted: image/png]" in contents
 
 
 # --- repeated runs --------------------------------------------------------

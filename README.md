@@ -38,7 +38,7 @@ Python ≥ 3.12, managed with `uv`. Install with `uv sync`.
 | `afb/mapping.py` + `data/trail-mapping-v0.yaml` | TRAIL categories translated into taxonomy codes |
 | `afb/agreement.py` | subquestion 2: judge validity against the experts |
 | `afb/coverage.py` | subquestion 1: escape-hatch and unused-code evidence for the next taxonomy version |
-| `afb/harbor.py` | Terminal-Bench runs ingested into the same trajectory format |
+| `afb/harbor.py` | Terminal-Bench runs ingested into the same trajectory format, reading Harbor's ATIF trajectory files |
 | `afb/runs.py` | subquestions 3 and 4: systematic vs. stochastic, and failure profiles per agent |
 
 ### Usage

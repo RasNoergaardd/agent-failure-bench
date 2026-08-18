@@ -1,0 +1,29 @@
+{
+  "id": "344871a9-4d3e-4cab-9979-e9dc9ea726ac",
+  "task_name": "terminal-bench/build-wheel",
+  "trial_name": "build-wheel__attempt1",
+  "task_checksum": "60ff1cd1fbb13cf31c590d864c34887cda1d8b7de4dc7aafd338f245b84d4441",
+  "agent_info": {
+    "name": "terminus-2",
+    "version": "2.0.0",
+    "model_info": {
+      "model_name": "Qwen/Qwen3-32B-AWQ"
+    }
+  },
+  "agent_result": {
+    "n_input_tokens": null,
+    "n_cache_tokens": null,
+    "n_output_tokens": null,
+    "cost_usd": null,
+    "rollout_details": null,
+    "metadata": null
+  },
+  "verifier_result": {
+    "rewards": {
+      "reward": 0.0
+    }
+  },
+  "exception_info": null,
+  "started_at": "2026-08-18T08:20:37.800311Z",
+  "finished_at": "2026-08-18T08:22:11.717197Z"
+}
