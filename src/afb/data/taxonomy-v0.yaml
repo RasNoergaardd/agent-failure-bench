@@ -1,0 +1,374 @@
+# Machine-readable encoding of research/taxonomy-v0.md.
+# The prose document is authoritative; this file must mirror it exactly.
+# Per constitution.md section 2, a version is never edited in place: a revision
+# creates taxonomy-v1.yaml alongside this file.
+
+version: v0
+date: 2026-07-09
+status: draft, not yet empirically validated
+source_document: research/taxonomy-v0.md
+
+axes:
+  cognitive_function: which faculty of the agent failed
+  error_type: the fine-grained failure mode within that faculty
+qualifiers:
+  - severity
+  - root_cause
+  - cascade_of
+location: event index, or span [start, end], in the normalized trajectory
+
+cognitive_functions:
+  - code: MEM
+    name: Memory
+    scope: >-
+      Retaining and recalling information available earlier in the session: the
+      task instruction, previously observed file contents, command outputs,
+      environment facts.
+
+  - code: RFL
+    name: Reflection
+    scope: >-
+      Evaluating one's own actions and their outcomes: reading command output,
+      judging progress, diagnosing errors.
+
+  - code: PLN
+    name: Planning
+    scope: >-
+      Choosing what to do: interpreting the task, forming a strategy,
+      respecting constraints.
+
+  - code: ACT
+    name: Action
+    scope: Translating an intention into a concrete command or edit.
+
+  - code: SYS
+    name: System
+    scope: >-
+      Failures outside the agent's cognition: harness limits, environment
+      defects, provider errors. These establish that not every failed
+      trajectory implies an agent error.
+
+error_types:
+  # --- MEM ------------------------------------------------------------------
+  - code: MEM-1
+    function: MEM
+    name: Context loss
+    definition: >-
+      The agent fails to use information it demonstrably observed earlier
+      (re-explores known state, contradicts an earlier observation, asks the
+      environment for what it already saw).
+    example: >-
+      `cat config.yaml` showed the port is 8081; ten steps later the agent
+      hardcodes 8080.
+    decision_rule: >-
+      The information must have appeared verbatim in an earlier event. If it was
+      never observed, consider MEM-2 (fabrication) or PLN-1 (misunderstanding).
+    provenance: "AET: memory retrieval failure; TRAIL: context handling failures."
+
+  - code: MEM-2
+    function: MEM
+    name: Recall fabrication
+    definition: >-
+      The agent "recalls" an observation that never occurred - a file, flag,
+      output, or environment fact it treats as previously seen.
+    example: >-
+      "As we saw, the tests are in `tests/unit/`" when no such listing ever
+      happened (directory is `test/`).
+    decision_rule: >-
+      Distinguish from RFL-5 (fabricated evaluation of a real action) and from
+      general world-knowledge errors in planning (PLN-5). MEM-2 requires a false
+      claim about session history.
+    provenance: "AET: memory/hallucination; TRAIL: hallucination (text-only), narrowed to session history."
+
+  - code: MEM-3
+    function: MEM
+    name: Instruction drift
+    definition: >-
+      A requirement stated in the task instruction is silently dropped or
+      simplified away as the trajectory progresses.
+    example: >-
+      Task says "solution must not modify `main.py`"; after a failed attempt,
+      the agent edits `main.py`.
+    decision_rule: >-
+      If the constraint was never acted on from the start, prefer PLN-2
+      (constraint ignored at planning time). MEM-3 requires early compliance
+      followed by later violation.
+    provenance: "AET: over-simplification; TRAIL: instruction non-compliance."
+
+  # --- RFL ------------------------------------------------------------------
+  - code: RFL-1
+    function: RFL
+    name: Output misinterpretation
+    definition: >-
+      The agent misreads the content of a command's actual output (exit codes,
+      error messages, test results, file contents).
+    example: '`pytest` prints `2 failed, 8 passed`; the agent responds "all tests pass."'
+    decision_rule: >-
+      The output must contain the correct information legibly. If the output was
+      truncated or garbled by the harness, consider SYS-4/SYS-3.
+    provenance: "TRAIL: tool output misinterpretation; AET: outcome misinterpretation."
+
+  - code: RFL-2
+    function: RFL
+    name: Progress misjudgment
+    definition: >-
+      The agent's assessment of overall task progress is wrong - declares
+      completion, or continues down a failed path believing it works - without
+      misreading any specific output (else RFL-1).
+    example: >-
+      Agent finishes after making the code compile, though the task asked for a
+      passing test suite it never ran.
+    provenance: "AET: progress misjudge."
+
+  - code: RFL-3
+    function: RFL
+    name: Verification omission
+    terminal_addition: true
+    definition: >-
+      A cheap, available check that would have revealed an error is never run
+      (task tests, re-reading an edited file, `--dry-run`).
+    example: >-
+      Agent edits a script and submits without executing it once, though it is
+      executable in the container.
+    decision_rule: >-
+      Only label when a concrete check existed and was feasible within remaining
+      budget. This is an omission error: locate it at the last event before the
+      missed check was needed (typically just before completion).
+    provenance: >-
+      NEW (terminal). Motivated by terminal tasks having executable oracles the
+      agent can run itself.
+
+  - code: RFL-4
+    function: RFL
+    name: Causal misattribution
+    definition: >-
+      The agent notices a failure but blames the wrong cause, and its fix
+      targets that wrong cause.
+    example: >-
+      Import error is due to a missing `__init__.py`; the agent reinstalls the
+      package three times.
+    provenance: "AET: causal misattribution."
+
+  - code: RFL-5
+    function: RFL
+    name: Evaluation fabrication
+    definition: >-
+      The agent asserts the result of a check it never performed ("I ran the
+      tests and they pass" with no such event).
+    decision_rule: >-
+      vs. RFL-2: RFL-5 fabricates a specific verification event; RFL-2 is an
+      unjustified but honest judgment.
+    provenance: "AET: reflection/hallucination; TRAIL: hallucination (tool-related)."
+
+  # --- PLN ------------------------------------------------------------------
+  - code: PLN-1
+    function: PLN
+    name: Task misunderstanding
+    definition: >-
+      The agent solves a different problem than the one specified, from the
+      outset or at a decision point.
+    example: >-
+      Task: "make the failing test pass without changing the test"; agent
+      rewrites the test.
+    decision_rule: >-
+      vs. MEM-3: misunderstanding is present at first contact with the
+      requirement; drift is a later regression from earlier correct behavior.
+    provenance: "TRAIL: incorrect problem identification."
+
+  - code: PLN-2
+    function: PLN
+    name: Constraint ignorance
+    definition: >-
+      The plan violates an explicit task constraint (forbidden files, required
+      language or tool, resource limits) from the start.
+    provenance: "AET: constraint ignorance."
+
+  - code: PLN-3
+    function: PLN
+    name: Redundant looping
+    definition: >-
+      The agent repeats (near-)identical actions without incorporating their
+      results - retry loops, circular exploration, re-running a failing command
+      unchanged expecting different results.
+    example: "Runs the same failing `make` five times with no intervening change."
+    decision_rule: >-
+      Three or more near-identical attempts with no state change. The loop
+      itself is PLN-3; the reason it cannot diagnose the failure may be a
+      separate RFL-4.
+    provenance: "AET: inefficient plan; TRAIL: resource abuse."
+
+  - code: PLN-4
+    function: PLN
+    name: Goal deviation
+    definition: >-
+      The agent pursues subgoals irrelevant to the task (side explorations,
+      unrequested refactors) at material cost to the budget.
+    provenance: "TRAIL: goal deviation."
+
+  - code: PLN-5
+    function: PLN
+    name: Infeasible strategy
+    definition: >-
+      The plan requires capabilities or resources the environment does not offer
+      (unavailable network, missing tools it assumes exist, interactive programs
+      it cannot drive).
+    example: >-
+      Plan hinges on `pip install` in an offline container; agent commits to it
+      despite the first failure.
+    decision_rule: >-
+      The first attempt may be reasonable exploration; label PLN-5 when the
+      agent commits to the infeasible path after evidence of infeasibility.
+    provenance: "AET: impossible action (planning-level)."
+
+  # --- ACT ------------------------------------------------------------------
+  - code: ACT-1
+    function: ACT
+    name: Command construction error
+    terminal_addition: true
+    definition: >-
+      Malformed shell syntax: quoting, escaping, pipes, heredocs, invalid flag
+      syntax.
+    example: >-
+      Unescaped `$` in a double-quoted sed script silently expands to nothing.
+    provenance: "NEW (terminal); generalizes AET: format error to shell commands."
+
+  - code: ACT-2
+    function: ACT
+    name: Wrong command or tool selection
+    definition: >-
+      A well-formed command that is the wrong instrument for the intended step.
+    example: >-
+      Uses `grep` on a binary file where `strings`/`xxd` was needed; the
+      intention (inspect the file) was right.
+    provenance: "TRAIL: tool selection error."
+
+  - code: ACT-3
+    function: ACT
+    name: Parameter error
+    definition: "Right command, wrong arguments: paths, flags, targets, ordering."
+    example: "`cp src dst` reversed; `chmod 644` where `755` was needed."
+    provenance: "AET: parameter error."
+
+  - code: ACT-4
+    function: ACT
+    name: Plan-action mismatch
+    definition: >-
+      The executed action does not implement the agent's own stated intention.
+    example: >-
+      Says "I'll only add a null check to `parse()`" but the edit also rewrites
+      `validate()`.
+    decision_rule: >-
+      Requires an explicit stated intention in a nearby event to compare
+      against.
+    provenance: "AET: misalignment."
+
+  - code: ACT-5
+    function: ACT
+    name: Artifact format error
+    definition: >-
+      A produced artifact (file, code, config, final answer) is malformed
+      relative to its format requirements - syntax errors in written code,
+      invalid YAML/JSON, wrong answer format.
+    provenance: "TRAIL: formatting errors; AET: format error."
+
+  - code: ACT-6
+    function: ACT
+    name: Destructive action
+    terminal_addition: true
+    definition: >-
+      An action that irreversibly damages needed state: deleting or overwriting
+      required files, killing needed processes, corrupting the environment such
+      that the task becomes harder or impossible.
+    example: "`git checkout .` wipes the agent's own uncommitted fix."
+    provenance: >-
+      NEW (terminal). Terminal agents have unusually high destructive
+      capability; neither source taxonomy isolates this.
+
+  # --- SYS ------------------------------------------------------------------
+  - code: SYS-1
+    function: SYS
+    name: Budget exhaustion
+    definition: >-
+      The run ends by hitting the step or turn budget while the agent is still
+      making plausible progress.
+    decision_rule: >-
+      If the budget was consumed by a PLN-3 loop, the root cause is PLN-3 and
+      SYS-1 is its cascade.
+    provenance: "AET: step limit."
+
+  - code: SYS-2
+    function: SYS
+    name: Timeout
+    definition: >-
+      Wall-clock or per-command timeout terminates progress (long builds,
+      hanging interactive prompts).
+    provenance: "TRAIL: timeout issues."
+
+  - code: SYS-3
+    function: SYS
+    name: Environment defect
+    definition: >-
+      The task environment itself is broken or underspecified: missing
+      dependencies the task assumes, broken image, flaky services, ambiguous
+      task statement with contradictory oracle.
+    decision_rule: >-
+      Label only with evidence the defect is environmental (e.g., the documented
+      oracle solution would also fail).
+    provenance: "TRAIL: environment setup errors; AET: environment error."
+
+  - code: SYS-4
+    function: SYS
+    name: Model or API failure
+    definition: >-
+      LLM-provider-level failures: API errors, context-window overflow,
+      truncated generations, harness-garbled I/O.
+    provenance: "TRAIL: API/system issues; AET: LLM limit."
+
+  - code: SYS-5
+    function: SYS
+    name: Resource exhaustion
+    definition: >-
+      The container runs out of memory, disk, or CPU in a way not attributable
+      to a specific agent mistake (else the mistake, e.g., ACT-3, is the root
+      cause).
+    provenance: "TRAIL: resource exhaustion."
+
+escape_hatch:
+  code: "NEW-?"
+  rule: >-
+    If no category fits, annotate with code `NEW-?` plus a free-text description
+    of the proposed category.
+  purpose: >-
+    `NEW-?` usage is tracked by the coverage analysis and is the primary
+    empirical signal for adding categories in v1.
+  requires_field: proposed_category
+
+exclusions:
+  - source_category: "TRAIL: task orchestration errors"
+    reason: >-
+      Multi-agent coordination; this project is single-agent. Future work.
+  - source_category: "TRAIL: incorrect tool definition"
+    reason: >-
+      Terminal-Bench agents get a shell, not bespoke tool definitions;
+      harness-side defects fall under SYS-3.
+  - source_category: "TRAIL: poor information retrieval"
+    reason: >-
+      RAG-pipeline specific; terminal analogues are covered by
+      MEM-1/RFL-1/PLN-3.
+  - source_category: "TRAIL: auth/rate-limit subcodes"
+    reason: >-
+      Collapsed into SYS-4; per-status-code granularity earns no analysis value
+      at this project's scale.
+
+exclusions_note: >-
+  Later studies can reinstate any of these if `NEW-?` annotations or
+  unclassifiable failures show they were needed - that outcome is itself an
+  empirical finding for research question 1.
+
+revision_log:
+  - version: v0
+    date: 2026-07-09
+    change: >-
+      Initial draft merged from TRAIL + AgentErrorTaxonomy with 3
+      terminal-specific additions (RFL-3, ACT-1, ACT-6) and 4 exclusions.
+    evidence: "Literature only (research/related-work.md); no trajectory data yet."

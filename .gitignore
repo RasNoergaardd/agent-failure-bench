@@ -17,7 +17,12 @@ logs/
 
 # Datasets. TRAIL is gated and must not be reshared outside a gated or
 # private repository, so downloaded traces stay local.
-data/
+#
+# Anchored to the repository root on purpose. Unanchored, this pattern matches
+# every directory named `data` at any depth, which silently excluded
+# `src/afb/data/` — the taxonomy and the TRAIL mappings, which the judge prompt
+# is built from and which principles 2 and 4 require to be versioned.
+/data/
 
 # Judge output and analysis artifacts
 results/

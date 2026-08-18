@@ -1,0 +1,128 @@
+# Mapping from TRAIL's expert categories onto taxonomy v0.
+# Rationale and decision rules: research/trail-mapping.md
+#
+# Sensitivity variant of v0, not a successor to it. Instruction Non-compliance read as planning (PLN-2) rather than memory (MEM-3).
+# v0, v1 and v2 are scored side by side; see research/experiment-log.md D5.
+#
+# status:
+#   mapped       one TRAIL category corresponds to exactly one taxonomy code
+#   ambiguous    the category spans several codes; only the function is decidable
+#   out_of_scope taxonomy v0 deliberately excludes this category
+
+version: v1
+taxonomy_version: v0
+
+categories:
+  # --- Reasoning: hallucination -------------------------------------------
+  - trail: Language-only
+    status: mapped
+    error_type: MEM-2
+    aliases: [Language-Only, Language only]
+    note: TRAIL's text-only hallucination; MEM-2 narrows it to session history.
+
+  - trail: Tool-related
+    status: mapped
+    error_type: RFL-5
+    note: Fabricated tool result, which is a fabricated evaluation.
+
+  # --- Reasoning: information processing -----------------------------------
+  - trail: Poor Information Retrieval
+    status: out_of_scope
+    aliases: [Poor Information retrieval]
+    note: >-
+      Excluded from v0 as RAG-pipeline specific. Terminal analogues are split
+      across MEM-1, RFL-1 and PLN-3, so no single code corresponds.
+
+  - trail: Tool Output Misinterpretation
+    status: mapped
+    error_type: RFL-1
+
+  # --- Reasoning: decision making ------------------------------------------
+  - trail: Incorrect Problem Identification
+    status: mapped
+    error_type: PLN-1
+
+  - trail: Tool Selection Errors
+    status: mapped
+    error_type: ACT-2
+    aliases: [Tool Selection]
+
+  # --- Reasoning: output generation ----------------------------------------
+  - trail: Formatting Errors
+    status: mapped
+    error_type: ACT-5
+    aliases: [Formatting Error]
+
+  - trail: Instruction Non-compliance
+    status: ambiguous
+    function: planning
+    candidates: [MEM-3, PLN-2]
+    aliases: [Instruction Non-Compliance, Instruction non complience]
+    note: >-
+      Sensitivity variant of v0, which claimed memory. Reads the category as
+      PLN-2, ignoring a stated constraint, rather than MEM-3, drifting from it
+      after early compliance. TRAIL records no evidence either way.
+
+  # --- System execution: configuration -------------------------------------
+  - trail: Tool Definition Issues
+    status: out_of_scope
+    note: Excluded from v0; terminal agents get a shell, not tool definitions.
+
+  - trail: Environment Setup Errors
+    status: mapped
+    error_type: SYS-3
+
+  # --- System execution: API and service -----------------------------------
+  - trail: Authentication Errors
+    status: mapped
+    error_type: SYS-4
+    note: Collapsed into SYS-4 by v0, which drops per-status-code granularity.
+
+  - trail: Service Errors
+    status: mapped
+    error_type: SYS-4
+
+  - trail: Rate Limiting
+    status: mapped
+    error_type: SYS-4
+
+  - trail: Resource Not Found
+    status: mapped
+    error_type: SYS-4
+
+  # --- System execution: resource management -------------------------------
+  - trail: Resource Exhaustion
+    status: mapped
+    error_type: SYS-5
+
+  - trail: Timeout Issues
+    status: mapped
+    error_type: SYS-2
+
+  # --- Planning and coordination -------------------------------------------
+  - trail: Context Handling Failures
+    status: mapped
+    error_type: MEM-1
+    aliases: [Context Handling Failure]
+
+  - trail: Resource Abuse
+    status: mapped
+    error_type: PLN-3
+
+  - trail: Goal Deviation
+    status: mapped
+    error_type: PLN-4
+    aliases: [Goal deviation]
+
+  - trail: Task Orchestration
+    status: out_of_scope
+    aliases: [Task Orchestration Errors, Task Orchestration Error]
+    note: Multi-agent coordination; excluded from v0, which is single-agent.
+
+  # --- Observed in the data, absent from TRAIL's published list -------------
+  - trail: Incorrect Memory Usage
+    status: mapped
+    error_type: MEM-1
+    note: >-
+      Appears twice in the swe_bench split and in no TRAIL table. Treated as
+      context loss, the nearest v0 code.
