@@ -10,6 +10,7 @@ This module is pure. It performs no model call.
 
 import hashlib
 import json
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -21,11 +22,24 @@ from afb.trajectory import Trajectory
 GUIDELINES_PATH = Path(__file__).resolve().parents[2] / "research" / "annotation-guidelines.md"
 """Read from the repo, not copied into the package, so there is only one copy."""
 
+GUIDELINES_ENV = "AFB_GUIDELINES_PATH"
+"""Override for the guidelines file, so a run can replay a superseded version.
+
+The guidelines are edited in place and identified by digest, which means an
+earlier version exists only as a git object. Comparing versions under one judge
+therefore needs a way to point at an extracted copy without checking it out over
+the working tree, where a second concurrent job would read it by mistake.
+"""
+
+
+def guidelines_path() -> Path:
+    return Path(os.environ.get(GUIDELINES_ENV) or GUIDELINES_PATH)
+
 
 @lru_cache
 def guidelines_text() -> str:
     """The annotation guidelines, verbatim, as the judge's procedure."""
-    return GUIDELINES_PATH.read_text(encoding="utf-8").strip()
+    return guidelines_path().read_text(encoding="utf-8").strip()
 
 
 @lru_cache

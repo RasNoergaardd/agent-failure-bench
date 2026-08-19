@@ -74,6 +74,11 @@ LIMIT="${LIMIT:-5}"
 [ "$LIMIT" = all ] && LIMIT=""
 PORT="${PORT:-8000}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-40960}"
+# Optional git ref to replay a superseded version of the guidelines. The file is
+# edited in place, so an earlier version exists only as a git object; extracting
+# it to WORK keeps the working tree untouched, which matters because a second
+# concurrent job reads its guidelines from the same checkout.
+GUIDELINES_REF="${GUIDELINES_REF:-}"
 CHAR_BUDGET="${CHAR_BUDGET:-100000}"   # keeps a trajectory inside the context window
 SERVER_TIMEOUT="${SERVER_TIMEOUT:-1800}"  # weights download on a cold cache is slow
 
@@ -189,6 +194,18 @@ fi
 export PATH="$VENV/bin:$PATH"
 python -c "import afb, vllm; print('afb + vllm import OK')"
 
+if [ -n "$GUIDELINES_REF" ]; then
+    GUIDELINES_FILE="$WORK/guidelines-${GUIDELINES_REF}.md"
+    if ! git -C "$REPO" show "${GUIDELINES_REF}:research/annotation-guidelines.md" \
+         > "$GUIDELINES_FILE" 2>/dev/null; then
+        echo "GUIDELINES_REF='$GUIDELINES_REF' does not name a commit holding" >&2
+        echo "research/annotation-guidelines.md. Check 'git log -- <that path>'." >&2
+        exit 1
+    fi
+    export AFB_GUIDELINES_PATH="$GUIDELINES_FILE"
+    echo "guidelines replayed from $GUIDELINES_REF -> $GUIDELINES_FILE"
+fi
+
 # Principle 4 requires the serving stack version. Runs A and B did not record it,
 # which is why this is echoed rather than left to be recovered from the venv.
 echo "--- pinning info (principle 4) ---"
@@ -253,6 +270,7 @@ fi
 MODEL_SLUG="$(printf '%s' "${MODEL##*/}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9.' '-' \
               | sed 's/-\{2,\}/-/g; s/^-//; s/-$//')"
 [ "$THINKING" = on ] && MODEL_SLUG="${MODEL_SLUG}-thinking"
+[ -n "$GUIDELINES_REF" ] && MODEL_SLUG="${MODEL_SLUG}-guidelines-${GUIDELINES_REF}"
 OUT="${OUT:-results/judged-trail-${SPLIT}-${MODEL_SLUG}.jsonl}"
 
 echo "--- judging $SPLIT -> $OUT ---"
