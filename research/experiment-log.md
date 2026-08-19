@@ -505,6 +505,85 @@ schema but not yet against a trajectory Harbor produced from a live agent.
 
 ---
 
+## Run 2026-08-19 — guidelines v2, Qwen3-32B-AWQ, swe_bench
+
+The test of the v2 revision. The guidelines-v1 run's configuration exactly, with
+only the guidelines digest changed, so the pair is controlled.
+
+| Field | Value |
+|---|---|
+| Judge model | `Qwen/Qwen3-32B-AWQ` |
+| Serving stack | vLLM 0.27.1, torch 2.13.0+cu130, one A100-PCIE-40GB |
+| Sampling | temperature 0, max_tokens 8192, thinking off |
+| Context | `--max-model-len 40960`, prompt char budget 100 000 |
+| Guidelines | `cf52da01…9ab7d30` (v1 run used `a095d868…dc55c`) |
+| Taxonomy / mapping | v0 / v0 |
+| Data | TRAIL `swe_bench`, all 31 traces |
+| Output | `results/judged-trail-swe_bench-qwen3-32b-awq-guidelines-v2.jsonl` |
+| LSF job | 29150843 |
+
+### Observation
+
+31 of 31 traces judged. 152 annotations, against v1's 157.
+
+| Metric | v0 (rung D) | v1 | v2 |
+|---|---|---|---|
+| judge annotations | 268 | 157 | 152 |
+| matched pairs | 75 | 51 | 46 |
+| unmatched judge annotations | 193 | 101 | 106 |
+| localization precision | 0.280 | 0.336 | 0.303 |
+| localization recall | 0.315 | 0.225 | 0.193 |
+| localization F1 | 0.296 | 0.269 | 0.236 |
+| function-decidable pairs | 75 | 51 | 46 |
+| function accuracy | 0.080 | 0.157 | 0.087 |
+| function majority class | 0.712 | 0.451 | 0.587 |
+| function kappa | *unrecorded* | −0.013 | −0.064 |
+| code accuracy / decidable | *unrecorded* | 0.062 / 32 | 0.000 / 25 |
+| severity accuracy | *unrecorded* | 0.431 | 0.391 |
+
+Re-scored under mapping v2, no new inference: function accuracy 0.160 over 25
+decidable pairs, kappa −0.134. The v1 run scored 0.250 over 32 pairs there.
+
+Confusion, expert function to judge function, 46 pairs: memory → planning 15,
+action → planning 13, memory → action 11, action → action 3, system → planning
+1, memory → reflection 1, planning → action 1, planning → planning 1.
+
+**The block v2 targeted did not move.** Formatting Errors, the category the
+revision was written for:
+
+| | pairs | judge says action | rate |
+|---|---|---|---|
+| v1 | 22 | 4 | 0.182 |
+| v2 | 16 | 3 | 0.188 |
+
+Per-category, v2, 46 pairs: Instruction Non-compliance n=21 agree 0/21 (planning
+13, action 7, reflection 1); Formatting Errors n=16 agree 3/16 (planning 13,
+action 3); Context Handling Failures n=5 agree 0/5 (action 4, planning 1);
+Resource Abuse n=2 agree 1/2; Resource Exhaustion n=1 agree 0/1; Language-only
+n=1 agree 0/1.
+
+### The revision sequence is inside its own noise
+
+Agreeing pairs across the three guideline versions, same model, same split, same
+mapping v0: **4/50 (v0), 8/51 (v1), 4/46 (v2)**. Under mapping v2: 8/32 (v1),
+4/25 (v2).
+
+No pair of these differs significantly on counts this small. The apparent v1 gain
+recorded in D8 is not distinguishable from a lucky draw, and v2 — a further,
+narrower change in the same direction, aimed at a block that a fifth of the
+pairs sit in — moved that block by 0.6 percentage points.
+
+### Gaps
+
+- Rung D's kappa, code accuracy and severity accuracy are still uncaptured, so
+  three rows of the table above compare against nothing. Recoverable without
+  inference.
+- The v1 and v2 denominators differ (51 against 46 pairs), so the two
+  per-category tables are not composed identically. The Formatting Errors rate
+  is a within-category comparison and is unaffected.
+
+---
+
 ## Decisions
 
 ### D1 — match tolerance fixed at 0 events (2026-07-30)
@@ -707,6 +786,15 @@ from it, on 32 decidable pairs.
 **Still open:** memory remains unused, and it is now the largest single block of
 disagreement under either mapping. Whether that is the judge, the guidelines, or
 a further mapping artefact is not yet separated.
+
+> **Part one is under review as of 2026-08-19.** The guidelines-v2 run returns
+> function accuracy 0.087 (mapping v0) and 0.160 (mapping v2), below v1 on both,
+> making the three-version sequence 4/50, 8/51, 4/46. On those counts the v1 gain
+> claimed above is not distinguishable from sampling noise. Part two, the
+> denominator argument, is arithmetic on a fixed numerator and is unaffected.
+> The decision is left standing pending the Qwen3.8-27B probe rather than
+> rewritten, per the constitution's rule that decisions are superseded by dated
+> entries and never edited away.
 
 ---
 
