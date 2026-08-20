@@ -41,6 +41,17 @@ def fail(message: str) -> int:
     return 1
 
 
+def have_locally(image: str) -> bool:
+    """Whether `udocker images` already lists this reference."""
+    listing = subprocess.run(
+        [UDOCKER, "images"], capture_output=True, text=True, check=False
+    )
+    if listing.returncode != 0:
+        return False
+    wanted = image if ":" in image else f"{image}:latest"
+    return any(line.split()[0] == wanted for line in listing.stdout.splitlines() if line.split())
+
+
 def pull(argv: list[str]) -> int:
     """singularity pull <out.sif> docker://<image>"""
     positional = [a for a in argv if not a.startswith("-")]
@@ -50,9 +61,13 @@ def pull(argv: list[str]) -> int:
     out, source = positional
     image = source.removeprefix("docker://")
 
-    result = subprocess.run([UDOCKER, "pull", image])
-    if result.returncode != 0:
-        return fail(f"udocker pull {image} failed")
+    # An image built locally with `udocker import`, which is how a warmed image
+    # is made, exists only in the local repository. Pulling it asks a registry
+    # for a manifest that was never published, so check locally first.
+    if not have_locally(image):
+        result = subprocess.run([UDOCKER, "pull", image])
+        if result.returncode != 0:
+            return fail(f"udocker pull {image} failed")
 
     Path(out).write_text(f"{MARKER}{image}\n", encoding="utf-8")
     return 0
