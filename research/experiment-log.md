@@ -737,8 +737,16 @@ Three defects surfaced, each recorded because each would recur on a fresh setup:
 
 `harbor run -p smoke --agent oracle -e singularity` completes on the cluster: 1
 trial, 0 errors, reward 1.0, 53 seconds, against a `harbor init` template task
-whose test body is `pass`. That is a plumbing result and nothing more, but the
-plumbing is what was missing.
+whose test body is `pass`.
+
+A real benchmark task then followed. `terminal-bench/terminal-bench-2` downloads
+all 89 tasks, and every one of them names a prebuilt image on Docker Hub rather
+than a Dockerfile, which is what the singularity backend requires. Those images
+ship tmux but not asciinema, so each still hits the sixty-second ceiling until
+warmed; `scripts/harbor_warm_tasks.sh` warms one image per base image and
+repoints the task, recording the published reference in a comment so a run stays
+traceable to it. With that done, `terminal-bench-2/sanitize-git-repo` under the
+oracle agent completes in 57 seconds: 1 trial, 0 errors, reward 1.0.
 
 ### What this costs, and what is not yet shown
 
@@ -747,9 +755,9 @@ plumbing is what was missing.
   A task whose behaviour depends on process isolation may therefore behave
   differently here than under Docker, and any Terminal-Bench figure produced this
   way has to say so.
-- Only a template task has run. No real Terminal-Bench 2.0 task, no agent model,
-  and no trajectory has been produced yet, so `afb/harbor.py` is still verified
-  against Harbor's schema rather than against output from a live agent.
+- The oracle agent writes no trajectory, so `afb/harbor.py` is still verified
+  against Harbor's schema rather than against output from a live agent. No agent
+  model has run, and warming is so far done for one task of 89.
 - The smoke run was executed on the login node because the oracle agent needs no
   inference. Real runs must go through `bsub` with vLLM serving the agent model
   in the same job.
