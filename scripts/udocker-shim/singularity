@@ -75,7 +75,7 @@ def exec_(argv: list[str]) -> int:
     Flag translation, with the ones that have no user-space equivalent dropped
     rather than faked:
 
-      --pwd D          -> --workdir=D
+      --pwd D          -> mkdir -p D && cd D, inside the container
       -B src:tgt       -> --volume=src:tgt
       --fakeroot       -> --user=root
       --no-mount X     dropped, udocker mounts nothing implicitly
@@ -84,6 +84,7 @@ def exec_(argv: list[str]) -> int:
       --pid            dropped, PRoot provides no PID namespace
     """
     options: list[str] = []
+    workdir: str | None = None
     index = 0
 
     while index < len(argv):
@@ -97,7 +98,7 @@ def exec_(argv: list[str]) -> int:
             index += 1
             if index >= len(argv):
                 return fail("--pwd given without a directory")
-            options.append(f"--workdir={argv[index]}")
+            workdir = argv[index]
         elif argument == "--fakeroot":
             options.append("--user=root")
         elif argument == "--no-mount":
@@ -118,6 +119,21 @@ def exec_(argv: list[str]) -> int:
 
     image = resolve_image(argv[index])
     command = argv[index + 1 :]
+
+    # udocker rejects --workdir for a directory that does not exist in the
+    # image, where Singularity created it implicitly under --writable-tmpfs.
+    # Harbor's working directory usually does not exist (task images are not
+    # required to ship /app), so make it inside the container instead. The
+    # placeholder argument after -c becomes $0, leaving the original argv as
+    # "$@" untouched, which matters because that argv contains its own quoting.
+    if workdir is not None:
+        command = [
+            "/bin/sh",
+            "-c",
+            f"mkdir -p {shlex.quote(workdir)} && cd {shlex.quote(workdir)} && exec \"$@\"",
+            "sh",
+            *command,
+        ]
 
     # --rm matters here: Harbor starts one container per trial and a cluster
     # filesystem fills up quickly with abandoned rootfs copies otherwise.
