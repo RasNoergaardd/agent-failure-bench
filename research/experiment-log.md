@@ -584,6 +584,110 @@ pairs sit in — moved that block by 0.6 percentage points.
 
 ---
 
+## Runs 2026-08-19/20 — generation probe, Qwen3.8-27B, swe_bench, all three guideline versions
+
+D7 discharged D6's frontier requirement with a capacity ladder of Qwen3 models
+and concluded that capacity was not the cause of the classification failure.
+`Qwen/Qwen3.8-27B` is the closest available substitute for the frontier judge D6
+actually asked for: a newer generation, hybrid linear/full attention, 262 144
+native context. It is **not** a rung on that ladder — at 27B it has *fewer*
+parameters than Qwen3-32B-AWQ, so it varies generation, not capacity, and it is
+recorded separately for that reason.
+
+Having run it once under v2, the other two guideline versions were replayed under
+the same judge, which is the comparison the 32B sequence could not supply: three
+prompts, one model, everything else fixed.
+
+| Field | Value |
+|---|---|
+| Judge model | `Qwen/Qwen3.8-27B`, BF16, no quantization |
+| Serving stack | vLLM 0.27.1, torch 2.13.0+cu130, two A100-PCIE-40GB, TP=2 |
+| Sampling | temperature 0, max_tokens 8192, thinking off |
+| Context | `--max-model-len 40960`, prompt char budget 100 000 |
+| Taxonomy / mapping | v0 / v0, re-scored under mapping v2 |
+| Data | TRAIL `swe_bench`, all 31 traces |
+| LSF jobs | 29150863 (v2), 29154273 (v0), 29154274 (v1) |
+
+Guideline versions are replayed from git refs, each verified to reproduce its
+recorded digest: `257b897` → `bc2c95ec…` (v0), `b868c33` → `a095d868…` (v1),
+`1100de7` → `cf52da01…` (v2).
+
+### Observation
+
+31 of 31 traces judged in all three runs.
+
+| Metric | v0 | v1 | v2 |
+|---|---|---|---|
+| judge annotations | 78 | 78 | 82 |
+| matched pairs | 41 | 40 | 42 |
+| localization precision | 0.526 | 0.513 | 0.512 |
+| localization recall | 0.172 | 0.168 | 0.176 |
+| localization F1 | 0.259 | 0.253 | 0.263 |
+| function accuracy (mapping v0) | **0.244** | 0.175 | 0.167 |
+| function kappa (mapping v0) | **0.111** | 0.045 | 0.050 |
+| function accuracy (mapping v2) | **0.310** | 0.250 | 0.240 |
+| function kappa (mapping v2) | **0.158** | 0.077 | 0.095 |
+| code accuracy / decidable | 0.034 / 29 | 0.042 / 24 | 0.040 / 25 |
+| severity accuracy | **0.537** | 0.450 | 0.429 |
+
+Agreeing pairs behind those rates: 10, 7, 7 under mapping v0; 9, 6, 6 under
+mapping v2.
+
+**The unrevised guidelines score highest on every classification measure.** The
+ordering is the same under both mappings and repeats on the severity axis, which
+is scored independently of the function mapping.
+
+Formatting Errors, the category guidelines v2 was written to fix:
+
+| guidelines | pairs | judge says action | rate |
+|---|---|---|---|
+| v0 | 18 | 8 | 0.444 |
+| v1 | 15 | 4 | 0.267 |
+| v2 | 16 | 4 | 0.250 |
+
+Confusion under v0, 41 pairs: action → action 8, memory → reflection 8, action →
+planning 7, memory → planning 5, memory → system 4, memory → action 4, action →
+reflection 3, memory → memory 1, planning → planning 1.
+
+Per-category under v0: Formatting Errors n=18 agree 8/18; Instruction
+Non-compliance n=12 agree 1/12; Context Handling Failures n=10 agree 0/10
+(reflection 8, system 2); Resource Abuse n=1 agree 1/1.
+
+### Against the Qwen3-32B-AWQ runs
+
+Same guidelines v2, same split, same sampling; BF16 against AWQ 4-bit.
+
+| Metric | Qwen3-32B-AWQ | Qwen3.8-27B |
+|---|---|---|
+| judge annotations | 152 | 82 |
+| localization precision | 0.303 | 0.512 |
+| function accuracy (mapping v0) | 0.087 | 0.167 |
+| function kappa (mapping v0) | −0.064 | +0.050 |
+| function kappa (mapping v2) | −0.134 | +0.095 |
+
+Every Qwen3-32B run to date returned a negative kappa (−0.013, −0.064, −0.134).
+All three Qwen3.8 runs are positive (0.111, 0.045, 0.050). Memory, unused in
+every previous run in the project, is used once in each.
+
+Localization precision is 0.512–0.526 across all three guideline versions, a
+spread of 0.014, against 0.280–0.336 across the 32B's three. Localization tracks
+the model and is nearly insensitive to the prompt.
+
+### Gaps
+
+- BF16 against AWQ 4-bit is confounded with the generation change. The
+  Quark-quantized 4-bit build that would have separated them fails to load under
+  vLLM 0.27.1 (`AttributeError` in the Quark weight loader), so this is not
+  currently separable on this stack.
+- 10 correct against 7 and 7, on ~41 pairs, is not significant in isolation. The
+  claim rests on the direction repeating across two mappings, the severity axis
+  and the targeted category, not on the size of any single difference.
+- `function_beats_chance` is a bare `>` comparison, not a significance test. 9 of
+  29 against an expected 5.8 is roughly 1.4 standard deviations and may not be
+  reported as the judge beating chance.
+
+---
+
 ## Decisions
 
 ### D1 — match tolerance fixed at 0 events (2026-07-30)
@@ -690,6 +794,11 @@ category is undecidable on the function axis — not because it scores best.
 
 ### D7 — D6's gate is discharged: capacity is not the cause of the classification failure (2026-08-17)
 
+> **Superseded by D9 (2026-08-20).** Qwen3.8-27B, with fewer parameters than this
+> ladder's top rung, returns 0.244 against the 32B's 0.087 on identical
+> guidelines. The ladder varied parameter count within one generation, which is
+> not the axis the judge is limited by.
+
 **Evidence:** the capacity ladder above, rungs D and E in particular.
 
 **Reasoning:** D6 left two candidate causes and forbade revising anything until
@@ -787,6 +896,9 @@ from it, on 32 decidable pairs.
 disagreement under either mapping. Whether that is the judge, the guidelines, or
 a further mapping artefact is not yet separated.
 
+> **Superseded by D9 (2026-08-20): both revisions are harmful under a judge that
+> does not share the 32B's error pattern.** The note below stands as written.
+>
 > **Part one is under review as of 2026-08-19.** The guidelines-v2 run returns
 > function accuracy 0.087 (mapping v0) and 0.160 (mapping v2), below v1 on both,
 > making the three-version sequence 4/50, 8/51, 4/46. On those counts the v1 gain
@@ -795,6 +907,85 @@ a further mapping artefact is not yet separated.
 > The decision is left standing pending the Qwen3.8-27B probe rather than
 > rewritten, per the constitution's rule that decisions are superseded by dated
 > entries and never edited away.
+
+---
+
+### D9 — D7 and D8 are superseded: the ladder varied the wrong thing, and the guideline revisions were fitted to one judge (2026-08-20)
+
+**Evidence:** the three Qwen3.8-27B runs above, and the guidelines-v2 run on
+Qwen3-32B-AWQ.
+
+**Part one — D7 is wrong about capacity.** D7 concluded that capacity was not the
+cause of the classification failure, because function accuracy stayed flat
+(0.075 → 0.080) from Qwen3-14B-AWQ to Qwen3-32B-AWQ while localization rose. A
+27B model — *fewer* parameters than the 32B — returns 0.244 against the 32B's
+0.087 on identical guidelines, lifts localization precision 0.303 → 0.512, and
+turns kappa positive for the first time in the project.
+
+The ladder's inference was sound given what it varied. What it varied was
+parameter count inside one model generation, and that is not the axis the judge
+is limited by. D7's own stated limitation — that a plateau across 14B–32B cannot
+exclude a jump from a stronger model — is what actually happened, and it happened
+at a *smaller* parameter count than the top rung. Capacity is not refuted as a
+factor; it was never tested.
+
+**Part two — D8 is wrong about the revision.** D8 recorded that guidelines v1
+helped, on 0.080 → 0.157 in the 32B. Under one judge holding everything else
+fixed, the ordering is now:
+
+| guidelines | function acc (map v0) | function acc (map v2) | severity acc | Formatting Errors |
+|---|---|---|---|---|
+| v0 (unrevised) | 0.244 | 0.310 | 0.537 | 8/18 |
+| v1 | 0.175 | 0.250 | 0.450 | 4/15 |
+| v2 | 0.167 | 0.240 | 0.429 | 4/16 |
+
+Both revisions are harmful to this judge, monotonically, and the worst damage is
+in Formatting Errors — the exact category v2's tie-breaker was written to fix,
+which drops from 0.444 to 0.250.
+
+**The mechanism, and the methodological consequence.** Both revisions were
+written by reading the 32B's confusion matrix and category breakdown. They encode
+corrections for that model's specific error pattern — PLN-1 overuse, planning as
+a residual bucket — and a judge without that pattern is pushed off correct labels
+by rules aimed at a fault it does not have. The ordered function test in v1 is
+the clearest case: it exists to stop planning being reached by default, and on a
+model that was not defaulting to planning it diverts Formatting Errors into
+reflection instead.
+
+This is the failure D6 warned about, arriving from an unexpected direction. D6
+gated revision behind a stronger judge so that the taxonomy would not encode a
+weak model's limits. The gate was discharged by proxy in D7 and revision
+proceeded — against the weak model's limits, which is what D6 was protecting
+against.
+
+**Consequence for the guidelines.** v0 is restored as the version of record for
+reporting. v1 and v2 are retained in git and remain readable by
+`GUIDELINES_REF`, and their digests stay in this log, but no figure in the report
+is drawn from them. This is not "adopt whichever scores best": the reason is that
+v1 and v2 were derived from a single judge's errors on a single split and have
+now been shown not to transfer, which disqualifies them as general decision rules
+regardless of score.
+
+**Consequence for method.** A prompt revision derived from judge A's failures is
+not evidence about the guidelines; it is evidence about judge A. Any future
+revision must be validated on a judge other than the one whose errors motivated
+it, and on a split other than the one it was read from. This is now a standing
+requirement, not a suggestion.
+
+**What this does not support.** The best figure the project has is 9 of 29 under
+mapping v2, against 5.8 expected at a 0.200 chance rate — roughly 1.4 standard
+deviations, on 31 traces. It may not be described as the judge beating chance,
+and 10-against-7 across guideline versions is not significant in isolation. The
+defensible statements are that the function axis has moved from clearly below
+chance to indistinguishable from it, that kappa has changed sign, and that the
+ordering across guideline versions repeats on four independent measures.
+
+**Still open:** memory remains the dominant block of disagreement — 22 of 41
+pairs under v0, of which 1 agrees. Context Handling Failures is now the sharpest
+case: 10 pairs, expert says memory, the judge says reflection 8 times. That every
+judge and every guideline version disagrees the same way is the signature of a
+mapping problem rather than a judge problem, and it is not yet separated. Nothing
+here has been checked on `gaia`.
 
 ---
 
@@ -814,14 +1005,29 @@ a further mapping artefact is not yet separated.
   mid-JSON as a success. `Provenance.truncated` and `Provenance.attempts_used`
   make the third testable on the next run; they cannot be recovered for runs A
   and B.
-- **Judge capacity separated from taxonomy quality — closed by D7.** The ladder
-  showed localization improves with model size while classification does not.
-- **Memory is never used, by any judge, under any guidelines.** Zero annotations
-  across 268 (rung D) and 157 (guidelines v1), while the experts label 23 of 51
-  matched pairs memory. It is now the largest single block of disagreement, and
-  the positive triggers added in the guidelines revision did not change it.
-  Whether the cause is the judge, the guidelines, or a further mapping artefact
-  is not separated.
+- **Judge capacity separated from taxonomy quality — reopened by D9.** D7 closed
+  this on a ladder that varied parameter count within one model generation.
+  Qwen3.8-27B then beat the 32B on every classification measure with fewer
+  parameters, so the axis that matters has not been isolated. What is now
+  established is narrower: localization tracks the model and is nearly
+  insensitive to the prompt (precision spread 0.014 across three guideline
+  versions), while classification responds to both.
+- **Memory is the dominant block of disagreement, and may be a mapping artefact.**
+  Under Qwen3.8 with guidelines v0, 22 of 41 matched pairs are expert=memory and
+  1 agrees. Context Handling Failures is the sharpest case: 10 pairs, expert says
+  memory, the judge says reflection 8 times. Every judge and every guideline
+  version disagrees in the same direction, which is the signature of a mapping
+  problem rather than a judge problem. D8 established exactly this for
+  Instruction Non-compliance. Not yet separated; needs trace reading, not GPU
+  time.
+- **Every guideline revision was fitted to one judge on one split — D9.** v1 and
+  v2 were written from the 32B's errors on `swe_bench` and are harmful to a
+  judge that does not share that error pattern. No revision may be validated on
+  the judge whose errors motivated it, or on the split it was read from.
+- **Nothing has been checked on `gaia` since 2026-07-30.** The held-out split has
+  informed no rule, which is the only protection the project has against the
+  fitting described above. The final configuration must be validated there before
+  any RQ2 figure is reported.
 - **No agent has run through Harbor with a real model.** The format is verified
   against Harbor's ATIF schema (2026-08-18) but not against a live agent's
   output, and D3 makes real terminal runs a precondition for RQ1's taxonomy
