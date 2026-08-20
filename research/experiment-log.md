@@ -688,6 +688,74 @@ the model and is nearly insensitive to the prompt.
 
 ---
 
+## Harbor runs on the DTU cluster (2026-08-20)
+
+No agent had ever run through Harbor, which blocks RQ1's revision evidence per D3
+and blocks RQ3 and RQ4 outright. The obstacle was never the harness, it was that
+the cluster has no container runtime.
+
+### Observation — what the cluster does and does not provide
+
+| Runtime | Status | Why |
+|---|---|---|
+| Docker | unavailable | needs a daemon running as root |
+| Apptainer / Singularity | unavailable | not installed, and not in any module; needs a setuid binary or unprivileged user namespaces |
+| Podman | unavailable | same user-namespace requirement |
+| udocker | **works** | runs in user space via PRoot, needs neither |
+
+`/proc/sys/user/max_user_namespaces` is 0 on both the login node and the compute
+nodes, and `unshare --user` fails there, so every runtime that isolates through
+namespaces is ruled out without an administrator. udocker 1.3.17 was verified on
+compute node `n-62-31-22`, including `apt-get install`, which is the operation
+most likely to fail under PRoot.
+
+### The bridge to Harbor
+
+Harbor ships an HPC backend built for Apptainer, and it shells out to
+`singularity` in exactly two places, `pull` and `exec`. Translating those two
+command forms to udocker is smaller than forking the backend and leaves the
+in-container server and its HTTP protocol untouched, so
+`scripts/udocker-shim/singularity` does that and goes first on `PATH`.
+
+Three defects surfaced, each recorded because each would recur on a fresh setup:
+
+1. **`--workdir` for a directory absent from the image.** udocker validates it;
+   Singularity created it implicitly under `--writable-tmpfs`. Harbor's workdir
+   is usually `/app`, which task images need not ship. The shim now creates the
+   directory inside the container instead.
+2. **A sixty-second ceiling on server startup.** Harbor polls health sixty times
+   at one-second intervals, hardcoded, so no `--timeout-multiplier` reaches it.
+   Harbor's bootstrap installs tmux, asciinema and a uvicorn/fastapi venv on
+   every start, which takes about ten minutes under PRoot, so every trial timed
+   out while the container was still installing. Fixed by baking those
+   prerequisites into the image once, with `scripts/harbor_warm_image.sh`.
+3. **Pulling a locally built image.** A warmed image is made with `udocker
+   import` and exists only locally, so pulling asks a registry for a manifest
+   that was never published. The shim now checks the local repository first.
+
+### Result
+
+`harbor run -p smoke --agent oracle -e singularity` completes on the cluster: 1
+trial, 0 errors, reward 1.0, 53 seconds, against a `harbor init` template task
+whose test body is `pass`. That is a plumbing result and nothing more, but the
+plumbing is what was missing.
+
+### What this costs, and what is not yet shown
+
+- **PRoot gives no PID namespace**, and `--containall`, `--writable-tmpfs` and
+  `--fakeroot` have no user-space equivalents and are dropped rather than faked.
+  A task whose behaviour depends on process isolation may therefore behave
+  differently here than under Docker, and any Terminal-Bench figure produced this
+  way has to say so.
+- Only a template task has run. No real Terminal-Bench 2.0 task, no agent model,
+  and no trajectory has been produced yet, so `afb/harbor.py` is still verified
+  against Harbor's schema rather than against output from a live agent.
+- The smoke run was executed on the login node because the oracle agent needs no
+  inference. Real runs must go through `bsub` with vLLM serving the agent model
+  in the same job.
+
+---
+
 ## Decisions
 
 ### D1 — match tolerance fixed at 0 events (2026-07-30)
@@ -1082,7 +1150,10 @@ which variants exist, not what may be recomputed from labels already collected.
 - **No agent has run through Harbor with a real model.** The format is verified
   against Harbor's ATIF schema (2026-08-18) but not against a live agent's
   output, and D3 makes real terminal runs a precondition for RQ1's taxonomy
-  revision evidence, as well as for RQ3 and RQ4.
+  revision evidence, as well as for RQ3 and RQ4. The harness obstacle is now
+  cleared: Harbor runs on the cluster through udocker (2026-08-20), on a
+  template task with the oracle agent. A real task and a served agent model are
+  the remaining steps.
 - **The taxonomy and mappings were untracked until 2026-08-18.** `.gitignore`
   carried an unanchored `data/`, so `src/afb/data/` was excluded and no commit
   before `81cfde9` fully determined what any judge run read. Runs A through E
