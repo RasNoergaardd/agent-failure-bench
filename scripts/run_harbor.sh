@@ -6,7 +6,7 @@
 #BSUB -R "rusage[mem=8GB]"
 #BSUB -M 9GB
 #BSUB -R "select[gpu40gb]"
-#BSUB -gpu "num=2:mode=exclusive_process"
+#BSUB -gpu "num=1:mode=exclusive_process"
 #BSUB -W 12:00
 #BSUB -o logs/afb-harbor_%J.out
 #BSUB -e logs/afb-harbor_%J.err
@@ -16,6 +16,12 @@
 #
 #   bsub -env "all, WORK=/work3/s225786, TASKS=terminal-bench-2/sanitize-git-repo" \
 #        < scripts/run_harbor.sh
+#
+# A model needing more than one GPU overrides the directive below on the command
+# line, where it takes precedence, and sets TP to match:
+#
+#   bsub -gpu "num=2:mode=exclusive_process" \
+#        -env "all, MODEL=Qwen/Qwen3.8-27B, TP=2, TASKS=..." < scripts/run_harbor.sh
 #
 # Pass configuration through `bsub -env`, not as a shell prefix: `bsub < script`
 # feeds this file on stdin and drops prefix-assigned variables.
@@ -29,8 +35,11 @@ set -euo pipefail
 export VLLM_USE_FLASHINFER_SAMPLER=0   # compute nodes have no nvcc for the JIT
 
 # --- configuration ---------------------------------------------------------
-MODEL="${MODEL:-Qwen/Qwen3.8-27B}"
-TP="${TP:-2}"
+# The agent is deliberately not the strongest model available: the judge is, and
+# the two must differ so that one model does not both produce and grade a
+# trajectory. See research/experiment-design-rq3-rq4.md.
+MODEL="${MODEL:-Qwen/Qwen3-32B-AWQ}"
+TP="${TP:-1}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-40960}"
 AGENT="${AGENT:-terminus-2}"
 TASKS="${TASKS:-}"                     # space-separated task paths, required
@@ -171,6 +180,14 @@ PATH_ARGS=()
 for task in $TASKS; do
     PATH_ARGS+=(-p "$task")
 done
+
+# Subquestion 3 measures variation across repeats, so the sampling settings are
+# the experiment rather than a detail. vLLM serves the checkpoint's
+# generation_config unless overridden, and this records what that resolved to.
+echo "--- agent sampling (subquestion 3 needs this to be nonzero) ---"
+find "$HF_HOME/hub" -name generation_config.json -path "*$(printf %s "$MODEL" | tr / -)*" \
+    -exec head -c 400 {} \; -quit 2>/dev/null || echo "no generation_config.json found"
+echo
 
 echo "--- running $AGENT against $MODEL ---"
 harbor run \

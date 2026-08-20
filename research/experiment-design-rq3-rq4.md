@@ -20,15 +20,43 @@ where temperature is pinned to 0 precisely so that a rerun reproduces.
 
 So the two roles take opposite settings, and both are recorded:
 
-| Role | Temperature | Why |
-|---|---|---|
-| Agent (Terminus 2 driving Qwen3.8-27B) | the checkpoint's own default, recorded per run | Variation is the object of study, and the default is the condition a benchmark result would be reported under |
-| Judge (Qwen3.8-27B) | 0 | An annotation must be reproducible from its recorded configuration |
+| Role | Model | Temperature | Why |
+|---|---|---|---|
+| Agent (Terminus 2) | `Qwen/Qwen3-32B-AWQ` | the checkpoint's own default, recorded per run | Variation is the object of study, and the default is the condition a benchmark result would be reported under |
+| Judge | `Qwen/Qwen3.8-27B` | 0 | An annotation must be reproducible from its recorded configuration |
 
 Using the checkpoint default rather than an invented value keeps the measured
 variance the variance a user of this model would actually meet. The value is read
 from `generation_config.json` and echoed by the job script, because a variance
 figure means nothing without it.
+
+## Which model plays which role
+
+The agent and the judge are **different models**, and which model takes which
+role is not arbitrary.
+
+Judge quality is the binding constraint on everything downstream, because a
+failure profile is only as good as the labels it is counted from. The capacity
+ladder and the guideline comparison identified exactly one model that classifies
+above its own marginal, so Qwen3.8-27B is the judge.
+
+Agent quality is not a constraint, and treating it as one would import a concern
+from leaderboard work that does not apply here. This project studies failures, so
+an agent that fails more often yields more of the material under study, not less.
+Qwen3-32B-AWQ is therefore the agent, and its weaker performance is a feature of
+the design rather than a compromise in it.
+
+The independence this buys is the point. Were one model to both produce and grade
+a trajectory, a blind spot in it would bias the failure profile in a direction no
+agreement study could detect, since on TRAIL the judge grades traces it had no
+part in producing. Separating the roles removes that confound rather than
+declaring it.
+
+Two consequences follow, both favourable. The 32B in 4-bit fits a single GPU,
+where the 27B in BF16 needs two, and single-GPU jobs on this cluster schedule in
+minutes against days for two, which decides whether ten repeats across many tasks
+is feasible at all. And the agent runs and the judging runs become separate jobs
+with separate models, so neither waits on the other.
 
 ## Design
 
@@ -90,13 +118,11 @@ worth having, and is the one a success-rate benchmark cannot report.
 
 ## Threats to validity, recorded now rather than discovered later
 
-**Agent and judge are the same model.** Qwen3.8-27B drives the agent and also
-labels the trajectory. A model may be systematically blind to the class of
-mistake it tends to make, which would bias the failure profile in a direction no
-agreement study on TRAIL would reveal, since there the judge labels traces it did
-not produce. This is stated as a limitation. Separating them needs a second model
-that fits the hardware, and the capacity ladder found none that classifies
-adequately.
+**The agent is a weak model.** Qwen3-32B-AWQ was chosen for the reasons above,
+and its failure profile is its own. Nothing here supports generalising that
+profile to stronger agents, and the report should not claim a general finding
+about terminal agents from one model's behaviour. What generalises is the
+method, not the profile.
 
 **PRoot changes the environment.** The cluster has no container runtime, so
 tasks run through udocker, which provides no PID namespace and drops
