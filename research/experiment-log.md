@@ -989,6 +989,59 @@ here has been checked on `gaia`.
 
 ---
 
+### D10 — the TRAIL mapping is closed (2026-08-20)
+
+**Evidence:** the pre-registration in `research/trail-mapping.md`, the sensitivity
+comparison of v0/v1/v2 recorded above, and the contested categories identified in
+D8 and D9.
+
+**Decision.** `src/afb/data/trail-mapping-v{0,1,2}.yaml` are final. v0 remains the
+mapping of record and v2 continues to be reported beside it as a sensitivity
+variant, as D1 does for match tolerance and D8 requires for the function axis. No
+further mapping version will be created for this project.
+
+**Reasoning.** The mapping's methodological value is that it was written before
+any judging happened, so the correspondences it asserts were not chosen to
+produce a score. That is a one-time asset and it is spent by the first edit made
+after seeing results. Every figure in this log is now known: which categories
+carry the disagreement, and which direction a remap would move the numbers. An
+edit from here could not be distinguished from tuning the target to the judge,
+whatever the intent behind it, and would have to be disclosed as such.
+
+Closing the mapping is therefore the conservative choice, not the convenient one.
+It costs accuracy on the reported figures — D8 showed that a share of the
+recorded disagreement is the mapping asserting a function the expert label does
+not determine — and the project accepts that cost rather than the alternative.
+
+**Consequence for the contested categories.** Two categories are known to be
+contested and are reported, not remapped:
+
+| Category | Mapping | Observation |
+|---|---|---|
+| Instruction Non-compliance | MEM-3 in v0, PLN-2 in v1, function-undecidable in v2 | The ambiguity was recorded before any run. Excluded from function scoring under v2, per D8. |
+| Context Handling Failures | MEM-1 in all three variants | 10 matched pairs under Qwen3.8/v0, 0 agree; the judge answers reflection 8 times. The same direction appears under Qwen3-32B and under all three guideline versions. |
+
+Context Handling Failures is the sharper case precisely because no mapping
+variant explores it: it is MEM-1 in v0, v1 and v2 alike, so the existing
+sensitivity analysis cannot see it. Two judge generations and three prompts
+disagree with it in the same direction. That is reported as an observation about
+the correspondence between TRAIL's categories and a cognitive-function axis, and
+it belongs in the report's discussion of what an expert-annotated tool-calling
+benchmark can and cannot validate about a terminal taxonomy.
+
+**What this does not decide.** Whether TRAIL's label or the judge's is correct for
+those ten pairs is not settled here, and closing the mapping does not assert that
+MEM-1 is right. It asserts that this project will not adjudicate it by editing
+the target after the fact. Reading those traces remains worth doing for the
+discussion; it is no longer a precondition for anything.
+
+**Consequence for scoring.** Mapping is applied when labels are scored, not when
+they are produced, so every stored `results/judged-trail-*.jsonl` can be
+re-scored under any variant at no inference cost. Closing the mapping constrains
+which variants exist, not what may be recomputed from labels already collected.
+
+---
+
 ## Known gaps
 
 - **vLLM version not captured** for runs A and B, which principle 4 requires
@@ -1012,14 +1065,12 @@ here has been checked on `gaia`.
   established is narrower: localization tracks the model and is nearly
   insensitive to the prompt (precision spread 0.014 across three guideline
   versions), while classification responds to both.
-- **Memory is the dominant block of disagreement, and may be a mapping artefact.**
-  Under Qwen3.8 with guidelines v0, 22 of 41 matched pairs are expert=memory and
-  1 agrees. Context Handling Failures is the sharpest case: 10 pairs, expert says
-  memory, the judge says reflection 8 times. Every judge and every guideline
-  version disagrees in the same direction, which is the signature of a mapping
-  problem rather than a judge problem. D8 established exactly this for
-  Instruction Non-compliance. Not yet separated; needs trace reading, not GPU
-  time.
+- **Memory is the dominant block of disagreement — closed as an action item by
+  D10, retained as an observation.** Under Qwen3.8 with guidelines v0, 22 of 41
+  matched pairs are expert=memory and 1 agrees; Context Handling Failures alone
+  is 10 pairs, 0 agreeing, with the judge answering reflection 8 times. The
+  mapping is closed, so this is reported rather than fixed. Reading those traces
+  is still worth doing for the discussion.
 - **Every guideline revision was fitted to one judge on one split — D9.** v1 and
   v2 were written from the 32B's errors on `swe_bench` and are harmful to a
   judge that does not share that error pattern. No revision may be validated on
