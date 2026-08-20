@@ -34,8 +34,20 @@ echo "--- base $BASE -> $TARGET ---"
 "$UDOCKER" run --user=root "$CONTAINER" bash -c '
   set -e
   export DEBIAN_FRONTEND=noninteractive
+  if ! command -v apt-get > /dev/null 2>&1; then
+    echo "no apt-get in this image; warming supports Debian-family images only" >&2
+    exit 1
+  fi
   apt-get update -qq
-  apt-get install -y -qq tmux asciinema
+  # python3-venv carries ensurepip, without which `python3 -m venv` fails on
+  # Debian and Ubuntu. The versioned name is what actually provides it once
+  # python3 is installed, so try both and let the unversioned one be enough
+  # where the versioned one does not exist.
+  apt-get install -y -qq tmux asciinema python3 python3-venv || true
+  if ! python3 -c "import ensurepip" 2>/dev/null; then
+    version="$(python3 -c "import sys; print(\"%d.%d\" % sys.version_info[:2])")"
+    apt-get install -y -qq "python${version}-venv" || true
+  fi
   python3 -m venv /opt/harbor-server
   /opt/harbor-server/bin/pip install -q uvicorn fastapi
   command -v tmux && command -v asciinema

@@ -25,6 +25,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+failed=()
 
 for task in "$@"; do
     toml="${task%/}/task.toml"
@@ -48,7 +49,13 @@ for task in "$@"; do
         echo "reuse $warm"
     else
         echo "--- warming $image -> $warm ---"
-        UDOCKER="$UDOCKER" "$here/harbor_warm_image.sh" "$image" "$warm"
+        # One unwarmable image must not abandon the other eighty-eight, so a
+        # failure is collected and reported at the end rather than raised here.
+        if ! UDOCKER="$UDOCKER" "$here/harbor_warm_image.sh" "$image" "$warm"; then
+            echo "FAILED to warm $image, leaving ${task} unchanged" >&2
+            failed+=("$task")
+            continue
+        fi
     fi
 
     # Keep the original recorded: principle 4 needs the image a run actually used
@@ -57,3 +64,11 @@ for task in "$@"; do
         || sed -i "s|^docker_image *= *\"${image}\"|# afb: original docker_image = \"${image}\"\ndocker_image = \"${warm}\"|" "$toml"
     echo "${task}: -> $warm"
 done
+
+if [ "${#failed[@]}" -gt 0 ]; then
+    echo
+    echo "${#failed[@]} task(s) could not be warmed and still point at their" >&2
+    echo "original image, so they will time out at Harbor's health check:" >&2
+    printf '  %s\n' "${failed[@]}" >&2
+    exit 1
+fi
