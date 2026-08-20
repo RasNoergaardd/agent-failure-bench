@@ -8,7 +8,10 @@
 # but not asciinema, so every one of them needs this.
 #
 #   scripts/harbor_warm_tasks.sh terminal-bench-2/sanitize-git-repo
-#   scripts/harbor_warm_tasks.sh terminal-bench-2/*/
+#   PRUNE_BASE=1 scripts/harbor_warm_tasks.sh terminal-bench-2/*/
+#
+# PRUNE_BASE=1 is passed through and deletes each base image once its warmed
+# copy exists, roughly halving the space all 89 tasks need.
 #
 # Idempotent: a task already pointing at a warmed image is skipped, so this can
 # be re-run over a directory as tasks are added.

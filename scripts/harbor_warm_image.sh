@@ -11,6 +11,12 @@
 #   scripts/harbor_warm_image.sh python:3.12-slim afb/harbor-warm:latest
 #
 # Then set `docker_image` in the task's task.toml to the warmed name.
+#
+# PRUNE_BASE=1 deletes the base image once the warmed one exists. Nothing points
+# at the base afterwards and the shim only pulls what is not already local, so
+# the cost of pruning is a re-pull if the image is ever warmed again. On a quota
+# measured in hundreds of gigabytes this roughly halves the space per task, which
+# is the difference between all 89 Terminal-Bench tasks fitting and not.
 
 set -euo pipefail
 
@@ -57,4 +63,11 @@ echo "--- base $BASE -> $TARGET ---"
 "$UDOCKER" export -o "$TARBALL" "$CONTAINER"
 "$UDOCKER" import "$TARBALL" "$TARGET"
 echo "--- $TARGET ready ---"
+
+if [ "${PRUNE_BASE:-0}" = 1 ]; then
+    echo "--- pruning base $BASE ---"
+    "$UDOCKER" rmi "$BASE" > /dev/null 2>&1 \
+        || echo "could not remove $BASE, continuing" >&2
+fi
+
 "$UDOCKER" images | grep -F "${TARGET%%:*}" || true
