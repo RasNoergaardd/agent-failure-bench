@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""A `singularity` command that is really udocker underneath.
+
+Harbor ships an HPC environment backend that shells out to `singularity`, and
+DTU's cluster provides no container runtime at all: Docker needs a root daemon,
+Apptainer needs either a setuid binary or unprivileged user namespaces, and
+`/proc/sys/user/max_user_namespaces` is 0 on both the login and the compute
+nodes. udocker runs the same Docker images entirely in user space via PRoot, so
+it works where those do not.
+
+Rather than fork Harbor's backend, this translates the only two command forms it
+issues. Both were read off `harbor/environments/singularity/singularity.py`,
+which constructs `singularity` argv in exactly two places:
+
+    singularity pull <out.sif> docker://<image>
+    singularity exec [flags] <image.sif> <command...>
+
+Everything else in that backend, including the in-container server and the HTTP
+protocol it speaks, is runtime-agnostic and is used unchanged.
+
+Put this directory first on PATH and set UDOCKER, or leave UDOCKER unset and
+have `udocker` itself on PATH.
+"""
+
+import os
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+UDOCKER = os.environ.get("UDOCKER", "udocker")
+
+# udocker has no .sif format. The backend only ever treats the path as an opaque
+# handle that it writes once and passes back to `exec`, so a text file holding
+# the image reference satisfies every use it makes of one.
+MARKER = "# udocker-shim image reference\n"
+
+
+def fail(message: str) -> int:
+    print(f"singularity-udocker-shim: {message}", file=sys.stderr)
+    return 1
+
+
+def pull(argv: list[str]) -> int:
+    """singularity pull <out.sif> docker://<image>"""
+    positional = [a for a in argv if not a.startswith("-")]
+    if len(positional) != 2:
+        return fail(f"expected 'pull <out.sif> docker://<image>', got {argv}")
+
+    out, source = positional
+    image = source.removeprefix("docker://")
+
+    result = subprocess.run([UDOCKER, "pull", image])
+    if result.returncode != 0:
+        return fail(f"udocker pull {image} failed")
+
+    Path(out).write_text(f"{MARKER}{image}\n", encoding="utf-8")
+    return 0
+
+
+def resolve_image(path: str) -> str:
+    """Read back what `pull` wrote, or accept a bare image reference."""
+    candidate = Path(path)
+    if candidate.is_file():
+        text = candidate.read_text(encoding="utf-8")
+        if text.startswith(MARKER):
+            return text[len(MARKER) :].strip()
+    # A task may name an image directly rather than going through pull.
+    return path
+
+
+def exec_(argv: list[str]) -> int:
+    """singularity exec [flags] <image.sif> <command...>
+
+    Flag translation, with the ones that have no user-space equivalent dropped
+    rather than faked:
+
+      --pwd D          -> --workdir=D
+      -B src:tgt       -> --volume=src:tgt
+      --fakeroot       -> --user=root
+      --no-mount X     dropped, udocker mounts nothing implicitly
+      --writable-tmpfs dropped, a udocker container's rootfs is already writable
+      --containall     dropped, udocker does not import the host environment
+      --pid            dropped, PRoot provides no PID namespace
+    """
+    options: list[str] = []
+    index = 0
+
+    while index < len(argv):
+        argument = argv[index]
+        if argument in ("-B", "--bind"):
+            index += 1
+            if index >= len(argv):
+                return fail("-B given without a mount specification")
+            options.append(f"--volume={argv[index]}")
+        elif argument == "--pwd":
+            index += 1
+            if index >= len(argv):
+                return fail("--pwd given without a directory")
+            options.append(f"--workdir={argv[index]}")
+        elif argument == "--fakeroot":
+            options.append("--user=root")
+        elif argument == "--no-mount":
+            index += 1  # and drop its value
+        elif argument in ("--writable-tmpfs", "--containall", "--pid", "--writable"):
+            pass
+        elif argument.startswith("-"):
+            print(
+                f"singularity-udocker-shim: ignoring unhandled flag {argument}",
+                file=sys.stderr,
+            )
+        else:
+            break
+        index += 1
+
+    if index >= len(argv):
+        return fail("no image given")
+
+    image = resolve_image(argv[index])
+    command = argv[index + 1 :]
+
+    # --rm matters here: Harbor starts one container per trial and a cluster
+    # filesystem fills up quickly with abandoned rootfs copies otherwise.
+    full = [UDOCKER, "run", "--rm", *options, image, *command]
+    print(
+        "singularity-udocker-shim: " + " ".join(shlex.quote(part) for part in full),
+        file=sys.stderr,
+    )
+    return subprocess.run(full).returncode
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        return fail("no subcommand")
+
+    # Global flags before the subcommand, e.g. `singularity --quiet exec ...`.
+    argv = sys.argv[1:]
+    while argv and argv[0].startswith("-"):
+        if argv[0] in ("--version", "-v"):
+            print("singularity-udocker-shim (udocker backend)")
+            return 0
+        argv = argv[1:]
+
+    if not argv:
+        return fail("no subcommand")
+
+    subcommand, rest = argv[0], argv[1:]
+    if subcommand == "pull":
+        return pull(rest)
+    if subcommand in ("exec", "run"):
+        return exec_(rest)
+    return fail(f"unsupported subcommand '{subcommand}'")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
