@@ -66,6 +66,13 @@ N_TASKS="${N_TASKS:-}"                 # cap on tasks, empty for all
 # Trials run concurrently against one vLLM server, which batches them, so the
 # limit is CPU rather than GPU: every container syscall goes through PRoot.
 N_CONCURRENT="${N_CONCURRENT:-4}"
+# Terminus sends a temperature only when given one, so leaving this empty means
+# vLLM serves the checkpoint's generation_config, which is the condition a
+# benchmark result would be reported under and is what the RQ3 design asks for.
+# Setting it makes the value part of the run's recorded configuration rather
+# than something recovered from the checkpoint afterwards. It must never be 0
+# for a subquestion-3 batch: identical repeats measure nothing.
+AGENT_TEMPERATURE="${AGENT_TEMPERATURE:-}"
 PORT="${PORT:-8000}"
 SERVER_TIMEOUT="${SERVER_TIMEOUT:-3600}"
 
@@ -243,11 +250,24 @@ echo "--- running $AGENT against $MODEL ---"
 LIMIT_ARGS=()
 [ -n "$N_TASKS" ] && LIMIT_ARGS=(--n-tasks "$N_TASKS")
 
+AGENT_ARGS=(--ak "api_base=http://127.0.0.1:$PORT/v1")
+if [ -n "$AGENT_TEMPERATURE" ]; then
+    if [ "$N_ATTEMPTS" -gt 1 ] && [ "$AGENT_TEMPERATURE" = 0 ]; then
+        echo "AGENT_TEMPERATURE=0 with N_ATTEMPTS=$N_ATTEMPTS reproduces the same" >&2
+        echo "run $N_ATTEMPTS times and measures no variance. Refusing." >&2
+        exit 1
+    fi
+    AGENT_ARGS+=(--ak "temperature=$AGENT_TEMPERATURE")
+    echo "agent temperature pinned to $AGENT_TEMPERATURE"
+else
+    echo "agent temperature unset: vLLM serves the checkpoint default above"
+fi
+
 harbor run \
     "${PATH_ARGS[@]}" \
     --agent "$AGENT" \
     --model "openai/$MODEL" \
-    --ak "api_base=http://127.0.0.1:$PORT/v1" \
+    "${AGENT_ARGS[@]}" \
     --n-attempts "$N_ATTEMPTS" \
     --n-concurrent "$N_CONCURRENT" \
     "${LIMIT_ARGS[@]}" \
