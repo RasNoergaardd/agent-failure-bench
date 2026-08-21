@@ -5,8 +5,15 @@
 #BSUB -R "span[hosts=1]"
 #BSUB -R "rusage[mem=8GB]"
 #BSUB -M 9GB
-#BSUB -R "select[gpu40gb]"
 #BSUB -gpu "num=1:mode=exclusive_process"
+# The GPU model is selected by the queue, not by a -R selector. An
+# `-R "select[gpu40gb]"` here would be ANDed with anything given on the command
+# line rather than replaced by it, which silently excludes every queue whose
+# cards are a different size: gpuh100 has 80 GB per GPU and far shorter waits
+# than gpua100, and a 27B model in BF16 fits one of those where it needs two
+# A100s. Override the queue on the command line:
+#
+#   bsub -q gpuh100 -gpu "num=1:mode=exclusive_process" -env "all, TP=1, ..." < <this script>
 #BSUB -W 08:00
 #BSUB -o logs/afb-judge_%J.out
 #BSUB -e logs/afb-judge_%J.err
