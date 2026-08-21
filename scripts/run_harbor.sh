@@ -24,6 +24,12 @@
 #   bsub -env "all, WORK=/work3/s225786, TASKS=terminal-bench-2/sanitize-git-repo" \
 #        < scripts/run_harbor.sh
 #
+# TASKS may also name a dataset directory, which is how subquestion 1 is run:
+# every task once, for the breadth that escape-hatch evidence needs. Subquestion
+# 3 wants the opposite shape, fewer tasks with N_ATTEMPTS repeats each.
+#
+#   bsub -env "all, WORK=/work3/s225786, TASKS=terminal-bench-2" < scripts/run_harbor.sh
+#
 # A model needing more than one GPU overrides the directive below on the command
 # line, where it takes precedence, and sets TP to match:
 #
@@ -51,6 +57,10 @@ MAX_MODEL_LEN="${MAX_MODEL_LEN:-40960}"
 AGENT="${AGENT:-terminus-2}"
 TASKS="${TASKS:-}"                     # space-separated task paths, required
 N_ATTEMPTS="${N_ATTEMPTS:-1}"          # repeats per task; RQ3 needs many
+N_TASKS="${N_TASKS:-}"                 # cap on tasks, empty for all
+# Trials run concurrently against one vLLM server, which batches them, so the
+# limit is CPU rather than GPU: every container syscall goes through PRoot.
+N_CONCURRENT="${N_CONCURRENT:-4}"
 PORT="${PORT:-8000}"
 SERVER_TIMEOUT="${SERVER_TIMEOUT:-3600}"
 
@@ -78,6 +88,12 @@ if ! [ "$TP" -gt 0 ] 2>/dev/null; then
 fi
 if ! [ "$N_ATTEMPTS" -gt 0 ] 2>/dev/null; then
     echo "N_ATTEMPTS must be a positive integer, got '$N_ATTEMPTS'." >&2; exit 1
+fi
+if ! [ "$N_CONCURRENT" -gt 0 ] 2>/dev/null; then
+    echo "N_CONCURRENT must be a positive integer, got '$N_CONCURRENT'." >&2; exit 1
+fi
+if [ -n "$N_TASKS" ] && ! [ "$N_TASKS" -gt 0 ] 2>/dev/null; then
+    echo "N_TASKS must be a positive integer or empty, got '$N_TASKS'." >&2; exit 1
 fi
 if [ ! -f "$REPO/pyproject.toml" ]; then
     echo "REPO='$REPO' is not the checkout: no pyproject.toml there." >&2; exit 1
@@ -175,8 +191,19 @@ echo "server ready after ${SECONDS}s"
 # installs asciinema on every start, which takes minutes under udocker's PRoot.
 # Warming is idempotent, so an already-warmed task costs one `udocker images`.
 cd "$TASK_ROOT"
+# TASKS may name a dataset directory rather than individual tasks, which is how
+# subquestion 1 is run: every task once, for breadth. Warming works per task, so
+# expand a directory holding no task.toml of its own into the tasks beneath it.
+WARM_TARGETS=""
+for entry in $TASKS; do
+    if [ -d "$entry" ] && [ ! -f "$entry/task.toml" ]; then
+        WARM_TARGETS="$WARM_TARGETS $entry/*/"
+    else
+        WARM_TARGETS="$WARM_TARGETS $entry"
+    fi
+done
 # shellcheck disable=SC2086
-"$REPO/scripts/harbor_warm_tasks.sh" $TASKS
+"$REPO/scripts/harbor_warm_tasks.sh" $WARM_TARGETS
 
 # --- run the tasks ---------------------------------------------------------
 # terminus-2 runs on the host and drives the container over HTTP, so it reaches
@@ -197,12 +224,17 @@ find "$HF_HOME/hub" -name generation_config.json -path "*$(printf %s "$MODEL" | 
 echo
 
 echo "--- running $AGENT against $MODEL ---"
+LIMIT_ARGS=()
+[ -n "$N_TASKS" ] && LIMIT_ARGS=(--n-tasks "$N_TASKS")
+
 harbor run \
     "${PATH_ARGS[@]}" \
     --agent "$AGENT" \
     --model "openai/$MODEL" \
     --ak "api_base=http://127.0.0.1:$PORT/v1" \
     --n-attempts "$N_ATTEMPTS" \
+    --n-concurrent "$N_CONCURRENT" \
+    "${LIMIT_ARGS[@]}" \
     -e singularity \
     --environment-kwarg "singularity_image_cache_dir=$WORK/.sif-cache"
 
