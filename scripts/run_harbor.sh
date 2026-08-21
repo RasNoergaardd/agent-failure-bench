@@ -224,8 +224,19 @@ done
 # the experiment rather than a detail. vLLM serves the checkpoint's
 # generation_config unless overridden, and this records what that resolved to.
 echo "--- agent sampling (subquestion 3 needs this to be nonzero) ---"
-find "$HF_HOME/hub" -name generation_config.json -path "*$(printf %s "$MODEL" | tr / -)*" \
-    -exec head -c 400 {} \; -quit 2>/dev/null || echo "no generation_config.json found"
+# HuggingFace names cache directories models--<org>--<name>, with a doubled
+# separator, so the model id's slash becomes two dashes and not one.
+MODEL_CACHE="$HF_HOME/hub/models--$(printf %s "$MODEL" | sed 's|/|--|g')"
+SAMPLING="$(find "$MODEL_CACHE" -name generation_config.json -print -quit 2>/dev/null)"
+if [ -n "$SAMPLING" ]; then
+    echo "generation_config $SAMPLING"
+    cat "$SAMPLING"
+else
+    # Not fatal for a single-attempt run, but subquestion 3 measures variation
+    # across repeats and cannot be interpreted without knowing what was sampled.
+    echo "WARNING: no generation_config.json under $MODEL_CACHE." >&2
+    echo "The sampling settings are unrecorded, which subquestion 3 requires." >&2
+fi
 echo
 
 echo "--- running $AGENT against $MODEL ---"
