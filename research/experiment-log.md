@@ -764,6 +764,56 @@ oracle agent completes in 57 seconds: 1 trial, 0 errors, reward 1.0.
 
 ---
 
+## First real trajectory (2026-08-21)
+
+The last harness gap closed. `afb/harbor.py` was rewritten on 2026-08-18 against
+Harbor's ATIF schema but had never seen output from a live agent, because only
+the oracle agent had run and it writes no trajectory.
+
+| Field | Value |
+|---|---|
+| Agent | Terminus 2 |
+| Agent model | `Qwen/Qwen3-32B-AWQ`, one A100-PCIE-40GB, TP=1 |
+| Judge model | not this run; the judge is `Qwen/Qwen3.8-27B`, kept separate per the RQ3 design |
+| Environment | udocker via the singularity shim, warmed image |
+| Task | `terminal-bench-2/sanitize-git-repo`, 1 attempt |
+| LSF job | 29162533 |
+
+### Observation
+
+1 trial, 0 exceptions, reward 0.0, 3 minutes 41 seconds. The agent failed the
+task, which is the outcome this project is built to study.
+
+`harbor.load_dir` parses the trial: outcome `failure`, 34 events, and metadata
+carrying `task_id`, `run_id`, `agent` and `model`. The first two of those are the
+keys `afb/runs.py` groups by, so the variance analysis for subquestion 3 will
+group correctly without further work.
+
+The event sequence alternates `observation`, `agent`, `action` as the ATIF
+mapping expects. One event reads `Previous response had warnings: - Extra text
+detected before JSON object`, which is Terminus telling the agent its reply was
+malformed. That is an ACT-5 occurring unprompted in the first trajectory the
+project produced, and it is the class of terminal-specific failure the taxonomy
+added codes for.
+
+### Consequence for sizing
+
+3 minutes 41 seconds per trial is the figure the RQ3 design leaves the task count
+to be computed from. Ten repeats across all 89 tasks is roughly 55 GPU-hours,
+which is feasible split across jobs on a single GPU, and single-GPU jobs schedule
+here in minutes rather than the days a two-GPU request waits.
+
+All 89 task images are warmed as of this date, using 170 GB of the 250 GB
+`/work3` allocation.
+
+### Still open
+
+The trajectory has not yet been judged, and one trial is not evidence about
+anything except the pipeline. No repeat has been run, so nothing is yet known
+about variance.
+
+---
+
 ## Decisions
 
 ### D1 — match tolerance fixed at 0 events (2026-07-30)
@@ -1155,13 +1205,11 @@ which variants exist, not what may be recomputed from labels already collected.
   informed no rule, which is the only protection the project has against the
   fitting described above. The final configuration must be validated there before
   any RQ2 figure is reported.
-- **No agent has run through Harbor with a real model.** The format is verified
-  against Harbor's ATIF schema (2026-08-18) but not against a live agent's
-  output, and D3 makes real terminal runs a precondition for RQ1's taxonomy
-  revision evidence, as well as for RQ3 and RQ4. The harness obstacle is now
-  cleared: Harbor runs on the cluster through udocker (2026-08-20), on a
-  template task with the oracle agent. A real task and a served agent model are
-  the remaining steps.
+- **Closed 2026-08-21: an agent has run through Harbor and its trajectory
+  parses.** Terminus 2 driving Qwen3-32B-AWQ failed
+  `terminal-bench-2/sanitize-git-repo` in 3m41s, and `afb/harbor.py` reads the
+  result. D3's precondition for RQ1 revision evidence, and the precondition for
+  RQ3 and RQ4, are met. What remains is volume: repeats, and judging them.
 - **The taxonomy and mappings were untracked until 2026-08-18.** `.gitignore`
   carried an unanchored `data/`, so `src/afb/data/` was excluded and no commit
   before `81cfde9` fully determined what any judge run read. Runs A through E
