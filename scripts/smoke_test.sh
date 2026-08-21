@@ -10,6 +10,11 @@
 #BSUB -W 00:30
 #BSUB -o logs/afb-smoke_%J.out
 #BSUB -e logs/afb-smoke_%J.err
+#BSUB -u s225786@dtu.dk
+#BSUB -N
+# -N mails the job report on completion. Queue waits here run to days, so a
+# job that finishes or dies at three in the morning should say so rather than
+# wait to be noticed. Stdout still goes to the -o file; -N is separate.
 
 # Does the setup work at all? Checks, in order:
 #   1. the GPU is visible

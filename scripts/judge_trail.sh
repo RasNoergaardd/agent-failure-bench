@@ -17,6 +17,11 @@
 #BSUB -W 08:00
 #BSUB -o logs/afb-judge_%J.out
 #BSUB -e logs/afb-judge_%J.err
+#BSUB -u s225786@dtu.dk
+#BSUB -N
+# -N mails the job report on completion. Queue waits here run to days, so a
+# job that finishes or dies at three in the morning should say so rather than
+# wait to be noticed. Stdout still goes to the -o file; -N is separate.
 
 # Serve an open-weight judge with vLLM on the allocated GPUs, then run the judge
 # against it. Both the server and the client live inside this job, so nothing
