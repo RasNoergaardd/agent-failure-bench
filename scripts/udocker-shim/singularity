@@ -24,8 +24,10 @@ have `udocker` itself on PATH.
 
 import os
 import shlex
+import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 UDOCKER = os.environ.get("UDOCKER", "udocker")
@@ -150,14 +152,60 @@ def exec_(argv: list[str]) -> int:
             *command,
         ]
 
-    # --rm matters here: Harbor starts one container per trial and a cluster
-    # filesystem fills up quickly with abandoned rootfs copies otherwise.
-    full = [UDOCKER, "run", "--rm", *options, image, *command]
+    # udocker's own --rm cannot be relied on. PRoot leaves directories inside the
+    # rootfs that the invoking user cannot read, udocker's removal fails on them,
+    # and it reports nothing. A run of 89 Terminal-Bench trials left 63 abandoned
+    # rootfs copies of roughly a gigabyte each and exhausted the disk quota at
+    # trial 67, so the container is created under a known name here and removed
+    # explicitly, with the permissions repaired first.
+    name = f"afb-{uuid.uuid4().hex[:12]}"
+    created = subprocess.run(
+        [UDOCKER, "create", f"--name={name}", image],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if created.returncode != 0:
+        return fail(f"udocker create from {image} failed: {created.stderr.strip()}")
+
+    full = [UDOCKER, "run", *options, name, *command]
     print(
         "singularity-udocker-shim: " + " ".join(shlex.quote(part) for part in full),
         file=sys.stderr,
     )
-    return subprocess.run(full).returncode
+    try:
+        return subprocess.run(full).returncode
+    finally:
+        remove_container(name, created.stdout.strip())
+
+
+def remove_container(name: str, container_id: str) -> None:
+    """Remove a container, repairing the permissions udocker trips over.
+
+    Best effort on purpose: a trial whose cleanup fails should still report its
+    own result, and the alternative to a warning here is a silent leak.
+    """
+    subprocess.run([UDOCKER, "rm", name], capture_output=True, check=False)
+
+    root = Path(os.environ.get("UDOCKER_DIR", Path.home() / ".udocker")) / "containers"
+    for directory in (root / container_id, root / name):
+        if not container_id and directory.name == "":
+            continue
+        if not directory.is_dir():
+            continue
+        # PRoot leaves mode-000 directories that defeat both udocker and rmtree.
+        for path in directory.rglob("*"):
+            if path.is_dir():
+                try:
+                    path.chmod(0o700)
+                except OSError:
+                    pass
+        shutil.rmtree(directory, ignore_errors=True)
+        if directory.exists():
+            print(
+                f"singularity-udocker-shim: could not remove {directory}",
+                file=sys.stderr,
+            )
 
 
 def main() -> int:
