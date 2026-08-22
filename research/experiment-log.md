@@ -814,6 +814,110 @@ about variance.
 
 ---
 
+## Run 2026-08-21 — held-out validation, gaia, Qwen3.8-27B, guidelines v0
+
+The split that has informed no decision. Every guideline revision was written
+from swe_bench's confusion matrix, and the judge was chosen from swe_bench
+comparisons; gaia was last judged on 2026-07-30 and not consulted since. This is
+therefore the project's only out-of-sample estimate of judge validity, and the
+figure subquestion 2 is answered with.
+
+| Field | Value |
+|---|---|
+| Judge model | `Qwen/Qwen3.8-27B`, BF16, one A100-80GB, TP=1 |
+| Sampling | temperature 0, max_tokens 8192, thinking off |
+| Context | `--max-model-len 40960`, prompt char budget 100 000 |
+| Guidelines | `bc2c95ec…0744af` (v0, replayed from `257b897`) |
+| Taxonomy / mapping | v0 / v0, re-scored under mapping v2 |
+| Data | TRAIL `gaia`, 113 of 117 traces (see Gaps) |
+| Output | `results/judged-trail-gaia-qwen3.8-27b-guidelines-257b897.jsonl` |
+| LSF job | 29163236 |
+
+### Observation
+
+| Metric | gaia (Qwen3.8, v0) | swe_bench (Qwen3.8, v0) | gaia run B (Qwen3-14B, v0) |
+|---|---|---|---|
+| trajectories | 113 | 31 | 117 |
+| judge annotations | 262 | 78 | 193 |
+| matched pairs | 136 | 41 | 67 |
+| localization precision | 0.519 | 0.526 | 0.347 |
+| localization recall | 0.278 | 0.172 | 0.131 |
+| localization F1 | **0.362** | 0.259 | 0.191 |
+| function accuracy (mapping v0) | **0.301** | 0.244 | 0.149 |
+| function chance / majority | 0.200 / 0.279 | 0.200 / 0.537 | 0.200 / 0.343 |
+| function kappa | **+0.101** | +0.111 | −0.084 |
+| function accuracy (mapping v2) | 0.323 | 0.310 | *unrecorded* |
+| function kappa (mapping v2) | +0.116 | +0.158 | *unrecorded* |
+| code accuracy / decidable | **0.189 / 127** | 0.034 / 29 | 0.048 / 63 |
+| code chance / majority | 0.042 / 0.205 | 0.042 / 0.621 | — |
+| severity accuracy | **0.684** | 0.537 | 0.537 |
+
+**The result separates from chance, which no swe_bench run has.** 41 correct of
+136 against 27.2 expected at a 0.200 chance rate is 3.0 standard deviations. Code
+accuracy is 24 of 127 against 5.3 expected, roughly 8 standard deviations. D8's
+best swe_bench figure was 0.7 standard deviations and was recorded as
+indistinguishable from chance; this is a different kind of result, and it is the
+first run that also exceeds the majority-class baseline, 0.301 against 0.279.
+
+Confusion, expert function to judge function, 136 pairs: memory → reflection 22,
+reflection → reflection 19, action → planning 16, planning → reflection 13,
+action → reflection 12, planning → planning 10, memory → planning 9, action →
+action 9, reflection → planning 6, reflection → memory 4, memory → action 4,
+memory → memory 3, planning → action 3, system → planning 3, and four singletons.
+
+Per TRAIL category:
+
+| Category | pairs | expert | agree |
+|---|---|---|---|
+| Tool-related | 26 | reflection | 16 |
+| Language-only | 26 | memory | 3 |
+| Tool Selection Errors | 20 | action | 6 |
+| Goal Deviation | 19 | planning | 5 |
+| Formatting Errors | 17 | action | 3 |
+| Instruction Non-compliance | 9 | memory | 0 |
+| Resource Abuse | 5 | planning | 3 |
+| Tool Output Misinterpretation | 4 | reflection | 3 |
+| Incorrect Problem Identification | 3 | planning | 2 |
+| Context Handling Failures | 3 | memory | 0 |
+| Environment Setup Errors | 3 | system | 0 |
+| Authentication Errors | 1 | system | 0 |
+
+### Judge validity is split-dependent
+
+The same judge, the same guidelines, the same taxonomy and the same mapping give
+0.244 on swe_bench and 0.301 on gaia, and only the second separates from chance.
+Localization recall differs more sharply still, 0.172 against 0.278.
+
+Two contested categories reproduce here, which matters because they were
+identified on swe_bench and gaia had no part in identifying them. Formatting
+Errors is 3 of 17 with the judge answering planning 11 times, the same
+disagreement guidelines v2 was written for and failed to move. Instruction
+Non-compliance is 0 of 9, and Context Handling Failures 0 of 3, both the mapping
+ambiguities D10 closed as reported rather than remapped. A disagreement that
+appears on held-out data is evidence about the taxonomy boundary rather than a
+quirk of one split.
+
+The largest single block is new: Language-only, 26 pairs mapped to memory, of
+which the judge answers reflection 17 times and agrees 3 times. It does not
+appear in swe_bench at this size.
+
+### Gaps
+
+- **113 of 117 traces.** The run exited on a socket timeout to its own vLLM at
+  trace 113, with exit code 1, despite `--keep-going`. The missing four are the
+  tail of the iteration order rather than a length-biased subset, but the run is
+  a truncation and the figures above are computed on 96.6% of the split. A resume
+  run completes it, since `--resume` is the default and the output path is
+  derived from the model and guidelines reference.
+- A read timeout to a local server should not end a `--keep-going` run. That it
+  does is a defect in `judge()`'s error classification, not a property of the
+  data.
+- Run B's kappa, code accuracy and severity are recorded, but its localization
+  precision and recall come from a different judge, so the third column above
+  compares a model change and a nothing-else-held-fixed comparison.
+
+---
+
 ## Decisions
 
 ### D1 — match tolerance fixed at 0 events (2026-07-30)
@@ -1201,10 +1305,12 @@ which variants exist, not what may be recomputed from labels already collected.
   v2 were written from the 32B's errors on `swe_bench` and are harmful to a
   judge that does not share that error pattern. No revision may be validated on
   the judge whose errors motivated it, or on the split it was read from.
-- **Nothing has been checked on `gaia` since 2026-07-30.** The held-out split has
-  informed no rule, which is the only protection the project has against the
-  fitting described above. The final configuration must be validated there before
-  any RQ2 figure is reported.
+- **Closed 2026-08-21: the held-out split has been judged.** Qwen3.8-27B under
+  guidelines v0 scores 0.301 on the function axis against a 0.200 chance rate,
+  three standard deviations out, on data that informed no rule. Outstanding: the
+  run covered 113 of 117 traces and needs completing, and judge validity is now
+  known to differ by split, which the report must state rather than quoting one
+  number.
 - **Closed 2026-08-21: an agent has run through Harbor and its trajectory
   parses.** Terminus 2 driving Qwen3-32B-AWQ failed
   `terminal-bench-2/sanitize-git-repo` in 3m41s, and `afb/harbor.py` reads the
