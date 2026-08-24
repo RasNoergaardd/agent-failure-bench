@@ -18,10 +18,12 @@
 #BSUB -o logs/afb-harbor_%J.out
 #BSUB -e logs/afb-harbor_%J.err
 #BSUB -u s225786@dtu.dk
+#BSUB -B
 #BSUB -N
-# -N mails the job report on completion. Queue waits here run to days, so a
-# job that finishes or dies at three in the morning should say so rather than
-# wait to be noticed. Stdout still goes to the -o file; -N is separate.
+# -B mails when the job is dispatched and -N when it ends. Queue waits here run
+# to days, so a job that starts or dies at three in the morning should say so
+# rather than wait to be noticed, and the start mail is the one that says the
+# wait is over. Stdout still goes to the -o file; neither flag redirects it.
 
 # Serve an agent model with vLLM, then run Terminal-Bench tasks against it with
 # Harbor. Both live inside this job, so nothing needs a tunnel.
