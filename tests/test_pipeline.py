@@ -198,6 +198,24 @@ def test_judge_retries_with_the_validation_error():
     assert "was rejected" in calls[1][-1]["content"]
 
 
+def test_a_socket_timeout_becomes_a_retryable_judge_error(monkeypatch):
+    """A read timeout must not escape as itself.
+
+    `judge` only catches JudgeError, and so does --keep-going in the CLI, so a
+    bare TimeoutError ends the whole split on one slow trace rather than
+    skipping it.
+    """
+
+    def timeout(*args, **kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setenv("AFB_JUDGE_API_KEY", "dummy")
+    monkeypatch.setattr(judge.urllib.request, "urlopen", timeout)
+    with pytest.raises(judge.JudgeError, match="did not answer") as caught:
+        judge._post(judge.JudgeConfig(), [{"role": "user", "content": "hi"}])
+    assert caught.value.retryable
+
+
 def test_judge_gives_up_after_configured_attempts():
     with pytest.raises(judge.JudgeError, match="no valid annotations"):
         judge.judge(

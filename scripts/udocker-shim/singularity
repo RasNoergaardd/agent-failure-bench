@@ -25,12 +25,22 @@ have `udocker` itself on PATH.
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 
 UDOCKER = os.environ.get("UDOCKER", "udocker")
+
+# Seconds between asking the container tree to stop and killing it outright.
+GRACE = float(os.environ.get("AFB_SHIM_GRACE", 20))
+
+# Where to record the process groups this shim starts, so that the surrounding
+# batch job can tear down anything that outlives the shim itself. Unset outside
+# a job, where there is nothing to clean up after.
+PIDFILE = os.environ.get("AFB_SHIM_PIDFILE", "")
 
 # udocker has no .sif format. The backend only ever treats the path as an opaque
 # handle that it writes once and passes back to `exec`, so a text file holding
@@ -174,9 +184,100 @@ def exec_(argv: list[str]) -> int:
         file=sys.stderr,
     )
     try:
-        return subprocess.run(full).returncode
+        return supervise(full)
     finally:
         remove_container(name, created.stdout.strip())
+
+
+class Terminated(BaseException):
+    """A signal arrived, raised so the cleanup in `finally` still runs."""
+
+    def __init__(self, signum: int) -> None:
+        super().__init__(signum)
+        self.signum = signum
+
+
+def supervise(full: list[str]) -> int:
+    """Run the container and guarantee nothing of it survives this process.
+
+    Harbor stops a trial by sending SIGTERM to what it believes is Singularity,
+    which is this shim. Python's default SIGTERM handler ends the process at
+    once: no `finally` runs, and nothing signals the udocker and PRoot processes
+    underneath, which are left orphaned. On 2026-08-22 a trial killed that way
+    kept running on the compute node after its job had finished, holding a GPU
+    it was not using until cluster support noticed.
+
+    So the child gets its own process group, every stop signal is turned into an
+    exception, and the whole group is torn down on the way out.
+    """
+    child = subprocess.Popen(full, start_new_session=True)
+    record_group(child)
+
+    def raise_terminated(signum, frame):
+        raise Terminated(signum)
+
+    installed = {}
+    for received in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        installed[received] = signal.signal(received, raise_terminated)
+    try:
+        return child.wait()
+    except Terminated as stop:
+        print(
+            f"singularity-udocker-shim: signal {stop.signum}, stopping the container",
+            file=sys.stderr,
+        )
+        return 128 + stop.signum
+    finally:
+        for received, previous in installed.items():
+            signal.signal(received, previous)
+        reap(child)
+
+
+def record_group(child: subprocess.Popen) -> None:
+    """Note the child's process group for the batch job's own cleanup.
+
+    Belt and braces: the supervision below handles a signalled shim, but a shim
+    that is SIGKILLed cannot clean up after itself, and an abandoned container
+    holds a compute node until somebody notices.
+    """
+    if not PIDFILE:
+        return
+    try:
+        with open(PIDFILE, "a", encoding="utf-8") as handle:
+            handle.write(f"{os.getpgid(child.pid)}\n")
+    except OSError as error:
+        print(f"singularity-udocker-shim: could not record pgid: {error}", file=sys.stderr)
+
+
+def reap(child: subprocess.Popen) -> None:
+    """Terminate the child's whole process group, then make sure of it.
+
+    The group matters more than the child: udocker is a Python wrapper that
+    execs PRoot, which in turn holds the container's own processes, and killing
+    only the wrapper leaves the rest behind.
+    """
+    if child.poll() is not None:
+        return
+    try:
+        group = os.getpgid(child.pid)
+    except ProcessLookupError:
+        return
+
+    for stop in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(group, stop)
+        except ProcessLookupError:
+            return
+        deadline = time.monotonic() + (GRACE if stop == signal.SIGTERM else 5)
+        while time.monotonic() < deadline:
+            if child.poll() is not None:
+                return
+            time.sleep(0.2)
+
+    print(
+        f"singularity-udocker-shim: process group {group} survived SIGKILL",
+        file=sys.stderr,
+    )
 
 
 def remove_container(name: str, container_id: str) -> None:

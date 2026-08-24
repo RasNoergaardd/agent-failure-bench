@@ -84,6 +84,8 @@ UDOCKER_VENV="${UDOCKER_VENV:-$WORK/.venv-udocker}"
 TASK_ROOT="${TASK_ROOT:-$WORK/harbor-test}"     # where `harbor download` put them
 PYTHON_MODULE="${PYTHON_MODULE:-python3/3.12.11}"
 
+export AFB_SHIM_PIDFILE="${AFB_SHIM_PIDFILE:-$WORK/shim-pgids-${LSB_JOBID:-local}}"
+
 export HF_HOME="${HF_HOME:-$WORK/.cache/huggingface}"
 export UDOCKER_DIR="${UDOCKER_DIR:-$WORK/.udocker}"
 export UDOCKER="${UDOCKER:-$UDOCKER_VENV/bin/udocker}"
@@ -174,10 +176,38 @@ echo "--- starting vLLM, log: $SERVER_LOG ---"
     > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 
+: > "$AFB_SHIM_PIDFILE"   # a stale file from an earlier job names other processes
+
 cleanup() {
     echo "--- stopping vLLM (pid $SERVER_PID) ---"
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
+    reap_containers
+}
+
+# Containers must not outlive the job. On 2026-08-22 a trial that Harbor
+# force-killed left its udocker and PRoot processes running on the compute node
+# after the job had finished, holding a GPU it was not using until cluster
+# support wrote to ask what it was doing. The shim records the process group of
+# every container it starts in $AFB_SHIM_PIDFILE, and this stops all of them.
+reap_containers() {
+    [ -s "$AFB_SHIM_PIDFILE" ] || return 0
+    echo "--- stopping leftover containers ---"
+    while read -r group; do
+        [ -n "$group" ] || continue
+        kill -0 -- "-$group" 2>/dev/null || continue
+        echo "  terminating process group $group"
+        kill -TERM -- "-$group" 2>/dev/null || true
+    done < "$AFB_SHIM_PIDFILE"
+    sleep 10
+    while read -r group; do
+        [ -n "$group" ] || continue
+        if kill -0 -- "-$group" 2>/dev/null; then
+            echo "  killing process group $group"
+            kill -KILL -- "-$group" 2>/dev/null || true
+        fi
+    done < "$AFB_SHIM_PIDFILE"
+    rm -f "$AFB_SHIM_PIDFILE"
 }
 trap cleanup EXIT INT TERM
 
@@ -204,28 +234,38 @@ echo "server ready after ${SECONDS}s"
 # Warming is idempotent, so an already-warmed task costs one `udocker images`.
 cd "$TASK_ROOT"
 # TASKS may name a dataset directory rather than individual tasks, which is how
-# subquestion 1 is run: every task once, for breadth. Warming works per task, so
-# expand a directory holding no task.toml of its own into the tasks beneath it.
-WARM_TARGETS=""
-for entry in $TASKS; do
-    if [ -d "$entry" ] && [ ! -f "$entry/task.toml" ]; then
-        WARM_TARGETS="$WARM_TARGETS $entry/*/"
-    else
-        WARM_TARGETS="$WARM_TARGETS $entry"
-    fi
-done
+# subquestion 1 is run: every task once, for breadth. Expand such a directory
+# into the tasks beneath it, so that one list drives both the warming below and
+# the job configuration further down and the two cannot disagree.
+TASK_LIST="$(
+    for entry in $TASKS; do
+        if [ -d "$entry" ] && [ ! -f "$entry/task.toml" ]; then
+            for task in "$entry"/*/; do
+                [ -f "$task/task.toml" ] && printf '%s\n' "${task%/}"
+            done
+        else
+            printf '%s\n' "$entry"
+        fi
+    done | sort -u
+)"
+# The cap is applied here rather than by Harbor, so that the tasks named in the
+# configuration are exactly the tasks that run. Dataset order, per
+# research/experiment-design-rq3-rq4.md.
+[ -n "$N_TASKS" ] && TASK_LIST="$(printf '%s\n' "$TASK_LIST" | head -n "$N_TASKS")"
+TASK_COUNT="$(printf '%s\n' "$TASK_LIST" | grep -c .)"
+if [ "$TASK_COUNT" -eq 0 ]; then
+    echo "TASKS='$TASKS' matched no task.toml under $TASK_ROOT." >&2
+    exit 1
+fi
+echo "--- $TASK_COUNT task(s) resolved ---"
+
 # shellcheck disable=SC2086
-"$REPO/scripts/harbor_warm_tasks.sh" $WARM_TARGETS
+"$REPO/scripts/harbor_warm_tasks.sh" $TASK_LIST
 
 # --- run the tasks ---------------------------------------------------------
 # terminus-2 runs on the host and drives the container over HTTP, so it reaches
 # vLLM directly and the container needs no outward network for the model.
 export OPENAI_API_KEY="${OPENAI_API_KEY:-dummy}"   # vLLM ignores it, litellm requires one
-
-PATH_ARGS=()
-for task in $TASKS; do
-    PATH_ARGS+=(-p "$task")
-done
 
 # Subquestion 3 measures variation across repeats, so the sampling settings are
 # the experiment rather than a detail. vLLM serves the checkpoint's
@@ -246,32 +286,68 @@ else
 fi
 echo
 
-echo "--- running $AGENT against $MODEL ---"
-LIMIT_ARGS=()
-[ -n "$N_TASKS" ] && LIMIT_ARGS=(--n-tasks "$N_TASKS")
-
-AGENT_ARGS=(--ak "api_base=http://127.0.0.1:$PORT/v1")
+if [ -n "$AGENT_TEMPERATURE" ] && [ "$N_ATTEMPTS" -gt 1 ] && [ "$AGENT_TEMPERATURE" = 0 ]; then
+    echo "AGENT_TEMPERATURE=0 with N_ATTEMPTS=$N_ATTEMPTS reproduces the same" >&2
+    echo "run $N_ATTEMPTS times and measures no variance. Refusing." >&2
+    exit 1
+fi
 if [ -n "$AGENT_TEMPERATURE" ]; then
-    if [ "$N_ATTEMPTS" -gt 1 ] && [ "$AGENT_TEMPERATURE" = 0 ]; then
-        echo "AGENT_TEMPERATURE=0 with N_ATTEMPTS=$N_ATTEMPTS reproduces the same" >&2
-        echo "run $N_ATTEMPTS times and measures no variance. Refusing." >&2
-        exit 1
-    fi
-    AGENT_ARGS+=(--ak "temperature=$AGENT_TEMPERATURE")
     echo "agent temperature pinned to $AGENT_TEMPERATURE"
 else
     echo "agent temperature unset: vLLM serves the checkpoint default above"
 fi
 
+# The task list goes in a job configuration file rather than on the command
+# line. Harbor's repeated task-path flag does not accumulate: a run submitted on
+# 2026-08-22 named all 22 tasks, logged all 22, and wrote a config.json holding
+# only the last one, so 21 tasks were silently dropped and the job reported a
+# clean single-trial result. A configuration file is the documented granular
+# form, and --print-config below checks it before anything is scheduled.
+JOB_CONFIG="$TASK_ROOT/job-config-${LSB_JOBID:-local}.json"
+TASK_LIST="$TASK_LIST" MODEL="$MODEL" AGENT="$AGENT" PORT="$PORT" \
+AGENT_TEMPERATURE="$AGENT_TEMPERATURE" WORK="$WORK" \
+python3 - "$JOB_CONFIG" <<'PYCONF'
+import json, os, sys
+
+kwargs = {"api_base": f"http://127.0.0.1:{os.environ['PORT']}/v1"}
+if temperature := os.environ.get("AGENT_TEMPERATURE", ""):
+    kwargs["temperature"] = float(temperature)
+
+config = {
+    "environment": {
+        "type": "singularity",
+        "kwargs": {"singularity_image_cache_dir": f"{os.environ['WORK']}/.sif-cache"},
+    },
+    "agents": [
+        {
+            "name": os.environ["AGENT"],
+            "model_name": f"openai/{os.environ['MODEL']}",
+            "kwargs": kwargs,
+        }
+    ],
+    "tasks": [
+        {"path": line} for line in os.environ["TASK_LIST"].split("\n") if line.strip()
+    ],
+}
+with open(sys.argv[1], "w", encoding="utf-8") as handle:
+    json.dump(config, handle, indent=2)
+print(f"wrote {sys.argv[1]} with {len(config['tasks'])} task(s)")
+PYCONF
+
+# Verify the resolved configuration still holds every task before running it,
+# so that a silent drop fails the job rather than producing a smaller result.
+RESOLVED="$(harbor run -c "$JOB_CONFIG" --print-config)"
+RESOLVED_COUNT="$(printf '%s' "$RESOLVED" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["tasks"]))')"
+if [ "$RESOLVED_COUNT" != "$TASK_COUNT" ]; then
+    echo "Harbor resolved $RESOLVED_COUNT tasks from a configuration naming $TASK_COUNT." >&2
+    printf '%s\n' "$RESOLVED" >&2
+    exit 1
+fi
+echo "--- harbor resolved $RESOLVED_COUNT task(s), running $AGENT against $MODEL ---"
+
 harbor run \
-    "${PATH_ARGS[@]}" \
-    --agent "$AGENT" \
-    --model "openai/$MODEL" \
-    "${AGENT_ARGS[@]}" \
+    -c "$JOB_CONFIG" \
     --n-attempts "$N_ATTEMPTS" \
-    --n-concurrent "$N_CONCURRENT" \
-    "${LIMIT_ARGS[@]}" \
-    -e singularity \
-    --environment-kwarg "singularity_image_cache_dir=$WORK/.sif-cache"
+    --n-concurrent "$N_CONCURRENT"
 
 echo "=== $(date) | done ==="

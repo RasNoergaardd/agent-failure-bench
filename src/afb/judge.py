@@ -85,7 +85,12 @@ class JudgeConfig:
     """Raise this for a model that thinks: reasoning is billed against the same
     budget as the response, so a thinking model can exhaust it before the JSON
     is closed. A truncated response fails `parse` and costs a second request."""
-    timeout: float = 300.0
+    timeout: float = field(
+        default_factory=lambda: float(os.environ.get("AFB_JUDGE_TIMEOUT", 900))
+    )
+    """Seconds to wait for one completion. A 100k-character trajectory judged by
+    a thinking model on one GPU can take many minutes, and the ceiling has to sit
+    above the slowest trace in the split rather than above the median."""
     attempts: int = 3
     """Total tries per trajectory, including the repair attempt after invalid output."""
 
@@ -212,6 +217,15 @@ def _post(config: JudgeConfig, messages: list[dict[str, str]]) -> Completion:
             payload = json.loads(response.read())
     except urllib.error.HTTPError as error:
         raise JudgeError(f"{error.code} from {config.base_url}: {error.read()[:300]!r}") from error
+    except OSError as error:
+        # A read timeout or a dropped connection is an OSError, not an HTTPError,
+        # so without this it escapes as itself: past the retry loop below, which
+        # only catches JudgeError, and past --keep-going in the CLI, which does
+        # the same. One slow request then ends the whole split. That is what
+        # stopped the gaia run at trace 113 of 117 on 2026-08-21 and killed its
+        # resume on the first trace on 2026-08-22. It is retryable: the server
+        # is the local vLLM and a long trajectory can simply outrun the timeout.
+        raise JudgeError(f"{config.base_url} did not answer: {error!r}") from error
 
     if error := payload.get("error"):
         raise JudgeError(f"{config.model} returned an error: {error}")
