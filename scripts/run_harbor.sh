@@ -87,6 +87,7 @@ TASK_ROOT="${TASK_ROOT:-$WORK/harbor-test}"     # where `harbor download` put th
 PYTHON_MODULE="${PYTHON_MODULE:-python3/3.12.11}"
 
 export AFB_SHIM_PIDFILE="${AFB_SHIM_PIDFILE:-$WORK/shim-pgids-${LSB_JOBID:-local}}"
+export AFB_SHIM_CONTAINERS="${AFB_SHIM_CONTAINERS:-$WORK/shim-containers-${LSB_JOBID:-local}}"
 
 export HF_HOME="${HF_HOME:-$WORK/.cache/huggingface}"
 export UDOCKER_DIR="${UDOCKER_DIR:-$WORK/.udocker}"
@@ -178,13 +179,18 @@ echo "--- starting vLLM, log: $SERVER_LOG ---"
     > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 
-: > "$AFB_SHIM_PIDFILE"   # a stale file from an earlier job names other processes
+: > "$AFB_SHIM_PIDFILE"        # a stale file from an earlier job names other processes
+: > "$AFB_SHIM_CONTAINERS"
 
 cleanup() {
     echo "--- stopping vLLM (pid $SERVER_PID) ---"
     kill "$SERVER_PID" 2>/dev/null || true
     wait "$SERVER_PID" 2>/dev/null || true
     reap_containers
+    # Whatever the shims did not manage to remove themselves. Each rootfs is
+    # roughly three gigabytes, so a job that leaves its containers behind fills
+    # the quota for the next one.
+    singularity sweep || true
 }
 
 # Containers must not outlive the job. On 2026-08-22 a trial that Harbor

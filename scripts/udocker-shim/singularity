@@ -42,6 +42,11 @@ GRACE = float(os.environ.get("AFB_SHIM_GRACE", 20))
 # a job, where there is nothing to clean up after.
 PIDFILE = os.environ.get("AFB_SHIM_PIDFILE", "")
 
+# Where to record the containers this shim creates. Removal normally happens
+# here, but a shim that is SIGKILLed cannot remove anything, and each abandoned
+# rootfs is around three gigabytes.
+REGISTRY = os.environ.get("AFB_SHIM_CONTAINERS", "")
+
 # udocker has no .sif format. The backend only ever treats the path as an opaque
 # handle that it writes once and passes back to `exec`, so a text file holding
 # the image reference satisfies every use it makes of one.
@@ -177,6 +182,7 @@ def exec_(argv: list[str]) -> int:
     )
     if created.returncode != 0:
         return fail(f"udocker create from {image} failed: {created.stderr.strip()}")
+    record_container(name, created.stdout.strip())
 
     full = [UDOCKER, "run", *options, name, *command]
     print(
@@ -212,6 +218,7 @@ def supervise(full: list[str]) -> int:
     """
     child = subprocess.Popen(full, start_new_session=True)
     record_group(child)
+    signalled = False
 
     def raise_terminated(signum, frame):
         raise Terminated(signum)
@@ -226,11 +233,12 @@ def supervise(full: list[str]) -> int:
             f"singularity-udocker-shim: signal {stop.signum}, stopping the container",
             file=sys.stderr,
         )
+        signalled = True
         return 128 + stop.signum
     finally:
         for received, previous in installed.items():
             signal.signal(received, previous)
-        reap(child)
+        reap(child, hard=signalled)
 
 
 def record_group(child: subprocess.Popen) -> None:
@@ -249,12 +257,46 @@ def record_group(child: subprocess.Popen) -> None:
         print(f"singularity-udocker-shim: could not record pgid: {error}", file=sys.stderr)
 
 
-def reap(child: subprocess.Popen) -> None:
+def record_container(name: str, container_id: str) -> None:
+    """Note a created container so the batch job can remove what this shim cannot."""
+    if not REGISTRY:
+        return
+    try:
+        with open(REGISTRY, "a", encoding="utf-8") as handle:
+            handle.write(f"{container_id}\t{name}\n")
+    except OSError as error:
+        print(f"singularity-udocker-shim: could not record container: {error}", file=sys.stderr)
+
+
+def sweep() -> int:
+    """Remove every container named in the registry. Used by the batch job's cleanup."""
+    if not REGISTRY or not Path(REGISTRY).is_file():
+        return 0
+    removed = 0
+    for line in Path(REGISTRY).read_text(encoding="utf-8").splitlines():
+        container_id, _, name = line.partition("\t")
+        if not name:
+            continue
+        removed += remove_container(name, container_id)
+    print(f"singularity-udocker-shim: swept {removed} container(s)", file=sys.stderr)
+    Path(REGISTRY).unlink(missing_ok=True)
+    return 0
+
+
+def reap(child: subprocess.Popen, hard: bool = False) -> None:
     """Terminate the child's whole process group, then make sure of it.
 
     The group matters more than the child: udocker is a Python wrapper that
     execs PRoot, which in turn holds the container's own processes, and killing
     only the wrapper leaves the rest behind.
+
+    `hard` skips the polite SIGTERM. It is set when this shim has itself been
+    signalled, because Harbor follows its own SIGTERM with a force-kill after a
+    short wait: a run on 2026-08-24 spent that wait here being patient, was
+    killed part way through, and so never removed a single container. Fifty
+    rootfs copies of about three gigabytes each then filled the disk quota at
+    trial 50 of 89. There is nothing to be gentle about in a container that is
+    being torn down anyway.
     """
     if child.poll() is not None:
         return
@@ -263,7 +305,7 @@ def reap(child: subprocess.Popen) -> None:
     except ProcessLookupError:
         return
 
-    for stop in (signal.SIGTERM, signal.SIGKILL):
+    for stop in (signal.SIGKILL,) if hard else (signal.SIGTERM, signal.SIGKILL):
         try:
             os.killpg(group, stop)
         except ProcessLookupError:
@@ -280,33 +322,55 @@ def reap(child: subprocess.Popen) -> None:
     )
 
 
-def remove_container(name: str, container_id: str) -> None:
+def remove_container(name: str, container_id: str) -> int:
     """Remove a container, repairing the permissions udocker trips over.
 
     Best effort on purpose: a trial whose cleanup fails should still report its
     own result, and the alternative to a warning here is a silent leak.
     """
-    subprocess.run([UDOCKER, "rm", name], capture_output=True, check=False)
+    try:
+        subprocess.run([UDOCKER, "rm", name], capture_output=True, check=False)
+    except OSError as error:
+        print(f"singularity-udocker-shim: udocker rm failed: {error}", file=sys.stderr)
 
     root = Path(os.environ.get("UDOCKER_DIR", Path.home() / ".udocker")) / "containers"
-    for directory in (root / container_id, root / name):
-        if not container_id and directory.name == "":
+    removed = 0
+    for directory in (root / container_id if container_id else None, root / name):
+        if directory is None or not directory.is_dir():
             continue
-        if not directory.is_dir():
-            continue
-        # PRoot leaves mode-000 directories that defeat both udocker and rmtree.
-        for path in directory.rglob("*"):
-            if path.is_dir():
-                try:
-                    path.chmod(0o700)
-                except OSError:
-                    pass
-        shutil.rmtree(directory, ignore_errors=True)
+        force_remove(directory)
         if directory.exists():
             print(
                 f"singularity-udocker-shim: could not remove {directory}",
                 file=sys.stderr,
             )
+        else:
+            removed = 1
+    return removed
+
+
+def force_remove(directory: Path) -> None:
+    """Delete a tree containing directories PRoot left unreadable.
+
+    The permissions have to be repaired top down, and each directory has to be
+    made readable *before* its contents are listed. `rglob` cannot do that: it
+    lists a directory in order to yield it, so a mode-000 directory is skipped
+    before the chmod that would have opened it ever runs.
+    """
+    pending = [directory]
+    while pending:
+        current = pending.pop()
+        try:
+            current.chmod(0o700)
+        except OSError:
+            pass
+        try:
+            for entry in current.iterdir():
+                if entry.is_dir() and not entry.is_symlink():
+                    pending.append(entry)
+        except OSError:
+            pass
+    shutil.rmtree(directory, ignore_errors=True)
 
 
 def main() -> int:
@@ -329,6 +393,8 @@ def main() -> int:
         return pull(rest)
     if subcommand in ("exec", "run"):
         return exec_(rest)
+    if subcommand == "sweep":
+        return sweep()
     return fail(f"unsupported subcommand '{subcommand}'")
 
 
