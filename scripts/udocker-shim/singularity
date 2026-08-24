@@ -378,6 +378,12 @@ def force_remove(directory: Path) -> None:
     lists a directory in order to yield it, so a mode-000 directory is skipped
     before the chmod that would have opened it ever runs.
     """
+    # A container's name is a symlink to its id directory. rmtree refuses a
+    # symlink, so removing one that way leaves it behind reporting failure.
+    if directory.is_symlink():
+        directory.unlink(missing_ok=True)
+        return
+
     pending = [directory]
     while pending:
         current = pending.pop()
