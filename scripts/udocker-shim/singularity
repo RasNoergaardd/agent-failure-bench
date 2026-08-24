@@ -192,7 +192,7 @@ def exec_(argv: list[str]) -> int:
     try:
         return supervise(full)
     finally:
-        remove_container(name, created.stdout.strip())
+        detach_removal(name, created.stdout.strip())
 
 
 class Terminated(BaseException):
@@ -266,6 +266,27 @@ def record_container(name: str, container_id: str) -> None:
             handle.write(f"{container_id}\t{name}\n")
     except OSError as error:
         print(f"singularity-udocker-shim: could not record container: {error}", file=sys.stderr)
+
+
+def detach_removal(name: str, container_id: str) -> None:
+    """Remove the container in a process that outlives this one.
+
+    Deleting a rootfs on the cluster's parallel filesystem is metadata-bound and
+    takes minutes, while Harbor force-kills what it takes to be Singularity on a
+    much shorter timer. Removing inline therefore loses the race whenever the
+    trial was stopped rather than finished. A detached child is in its own
+    session, so the kill aimed at this shim does not reach it.
+    """
+    try:
+        subprocess.Popen(
+            [sys.executable, os.path.abspath(__file__), "remove", container_id, name],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as error:
+        print(f"singularity-udocker-shim: {error}, removing inline", file=sys.stderr)
+        remove_container(name, container_id)
 
 
 def sweep() -> int:
@@ -395,6 +416,11 @@ def main() -> int:
         return exec_(rest)
     if subcommand == "sweep":
         return sweep()
+    if subcommand == "remove":
+        if len(rest) != 2:
+            return fail("expected 'remove <container_id> <name>'")
+        remove_container(rest[1], rest[0])
+        return 0
     return fail(f"unsupported subcommand '{subcommand}'")
 
 
