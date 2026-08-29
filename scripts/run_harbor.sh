@@ -91,6 +91,16 @@ export AFB_SHIM_CONTAINERS="${AFB_SHIM_CONTAINERS:-$WORK/shim-containers-${LSB_J
 
 export HF_HOME="${HF_HOME:-$WORK/.cache/huggingface}"
 export UDOCKER_DIR="${UDOCKER_DIR:-$WORK/.udocker}"
+SHARED_UDOCKER="$UDOCKER_DIR"
+# Node-local disk for the container rootfs. `udocker create` copies the whole
+# image into a private tree of about three gigabytes, and on the shared parallel
+# filesystem both making and deleting one is metadata-bound and slow: two runs
+# died at trial 50 of 89 because rootfs copies accumulated faster than they could
+# be removed and filled the 250 GB quota. Local disk makes both cheap and takes
+# the trials off the quota entirely. Images are large and are not copied, so they
+# stay shared and are reached through symlinks.
+LOCAL_SCRATCH="${AFB_LOCAL_SCRATCH:-${__LSF_JOB_TMPDIR:-/tmp}}"
+LOCAL_UDOCKER="$LOCAL_SCRATCH/udocker-${LSB_JOBID:-local}"
 export UDOCKER="${UDOCKER:-$UDOCKER_VENV/bin/udocker}"
 
 # Refuse to run a configuration nobody asked for, in the manner of
@@ -123,6 +133,25 @@ fi
 
 cd "$REPO"
 mkdir -p logs
+
+# One rootfs per concurrent trial, plus headroom for the ones being deleted.
+NEED_MB=$(( (N_CONCURRENT + 2) * 4096 ))
+FREE_MB="$(df -Pm "$LOCAL_SCRATCH" 2>/dev/null | awk 'NR==2 {print $4}')"
+if [ -n "$FREE_MB" ] && [ "$FREE_MB" -ge "$NEED_MB" ]; then
+    mkdir -p "$LOCAL_UDOCKER/containers"
+    for entry in "$SHARED_UDOCKER"/*; do
+        name="$(basename "$entry")"
+        if [ -e "$entry" ] && [ "$name" != containers ]; then
+            ln -sfn "$entry" "$LOCAL_UDOCKER/$name"
+        fi
+    done
+    export UDOCKER_DIR="$LOCAL_UDOCKER"
+    echo "container rootfs on $LOCAL_UDOCKER (${FREE_MB}MB free), images shared from $SHARED_UDOCKER"
+else
+    echo "WARNING: $LOCAL_SCRATCH has ${FREE_MB:-unknown}MB free, ${NEED_MB}MB wanted." >&2
+    echo "Containers stay on $SHARED_UDOCKER and count against the disk quota," >&2
+    echo "which is what stopped the runs of 2026-08-22 and 2026-08-24." >&2
+fi
 
 echo "=== $(date) | job ${LSB_JOBID:-local} on $(hostname) ==="
 echo "model=$MODEL tp=$TP agent=$AGENT attempts=$N_ATTEMPTS"
@@ -191,6 +220,11 @@ cleanup() {
     # roughly three gigabytes, so a job that leaves its containers behind fills
     # the quota for the next one.
     singularity sweep || true
+    # Node-local scratch is the job's own, so nothing here is worth keeping.
+    if [ "$UDOCKER_DIR" != "$SHARED_UDOCKER" ]; then
+        rm -rf "$UDOCKER_DIR"
+    fi
+    return 0
 }
 
 # Containers must not outlive the job. On 2026-08-22 a trial that Harbor
