@@ -147,10 +147,19 @@ if [ -n "$FREE_MB" ] && [ "$FREE_MB" -ge "$NEED_MB" ]; then
     done
     export UDOCKER_DIR="$LOCAL_UDOCKER"
     echo "container rootfs on $LOCAL_UDOCKER (${FREE_MB}MB free), images shared from $SHARED_UDOCKER"
-else
+elif [ "${AFB_ALLOW_SHARED_CONTAINERS:-0}" = 1 ]; then
     echo "WARNING: $LOCAL_SCRATCH has ${FREE_MB:-unknown}MB free, ${NEED_MB}MB wanted." >&2
-    echo "Containers stay on $SHARED_UDOCKER and count against the disk quota," >&2
-    echo "which is what stopped the runs of 2026-08-22 and 2026-08-24." >&2
+    echo "Containers stay on $SHARED_UDOCKER and count against the disk quota." >&2
+else
+    # Refusing beats discovering it at trial 50 for the third time. Two runs
+    # have now died that way, each after about two hours of queue and compute.
+    echo "$LOCAL_SCRATCH has ${FREE_MB:-unknown}MB free and ${NEED_MB}MB is wanted." >&2
+    echo "Putting container rootfs on $SHARED_UDOCKER instead fills the disk" >&2
+    echo "quota part way through, which ended the runs of 2026-08-22 and" >&2
+    echo "2026-08-24 at trial 50 of 89. Lower N_CONCURRENT, point" >&2
+    echo "AFB_LOCAL_SCRATCH at a bigger local disk, or set" >&2
+    echo "AFB_ALLOW_SHARED_CONTAINERS=1 to run it anyway." >&2
+    exit 1
 fi
 
 echo "=== $(date) | job ${LSB_JOBID:-local} on $(hostname) ==="
