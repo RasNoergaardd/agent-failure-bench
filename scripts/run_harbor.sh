@@ -68,6 +68,14 @@ N_TASKS="${N_TASKS:-}"                 # cap on tasks, empty for all
 # Trials run concurrently against one vLLM server, which batches them, so the
 # limit is CPU rather than GPU: every container syscall goes through PRoot.
 N_CONCURRENT="${N_CONCURRENT:-4}"
+# Every container syscall goes through PRoot, so a task tuned for Docker gets
+# less real work done inside the same wall clock. Of 73 trials on 2026-08-24,
+# 16 never started their environment: eight hit Harbor's 600 second ceiling and
+# eight hit the three-attempt server health check underneath it. Those trials
+# have no agent behaviour in them to classify, so they are harness artifacts
+# rather than results. The multiplier is part of the run's configuration and is
+# echoed below, because it changes what a timeout means.
+TIMEOUT_MULTIPLIER="${TIMEOUT_MULTIPLIER:-2.0}"
 # Terminus sends a temperature only when given one, so leaving this empty means
 # vLLM serves the checkpoint's generation_config, which is the condition a
 # benchmark result would be reported under and is what the RQ3 design asks for.
@@ -163,7 +171,7 @@ else
 fi
 
 echo "=== $(date) | job ${LSB_JOBID:-local} on $(hostname) ==="
-echo "model=$MODEL tp=$TP agent=$AGENT attempts=$N_ATTEMPTS"
+echo "model=$MODEL tp=$TP agent=$AGENT attempts=$N_ATTEMPTS timeout_x=$TIMEOUT_MULTIPLIER"
 echo "tasks=$TASKS"
 echo "CHECK THESE LINES MATCH WHAT YOU SUBMITTED before trusting the results."
 
@@ -399,6 +407,7 @@ echo "--- harbor resolved $RESOLVED_COUNT task(s), running $AGENT against $MODEL
 harbor run \
     -c "$JOB_CONFIG" \
     --n-attempts "$N_ATTEMPTS" \
-    --n-concurrent "$N_CONCURRENT"
+    --n-concurrent "$N_CONCURRENT" \
+    --timeout-multiplier "$TIMEOUT_MULTIPLIER"
 
 echo "=== $(date) | done ==="
