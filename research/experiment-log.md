@@ -814,7 +814,7 @@ about variance.
 
 ---
 
-## Run 2026-08-21 — held-out validation, gaia, Qwen3.8-27B, guidelines v0
+## Run 2026-08-21/29 — held-out validation, gaia, Qwen3.8-27B, guidelines v0
 
 The split that has informed no decision. Every guideline revision was written
 from swe_bench's confusion matrix, and the judge was chosen from swe_bench
@@ -828,55 +828,73 @@ figure subquestion 2 is answered with.
 | Sampling | temperature 0, max_tokens 8192, thinking off |
 | Context | `--max-model-len 40960`, prompt char budget 100 000 |
 | Guidelines | `bc2c95ec…0744af` (v0, replayed from `257b897`) |
-| Taxonomy / mapping | v0 / v0, re-scored under mapping v2 |
-| Data | TRAIL `gaia`, 113 of 117 traces (see Gaps) |
+| Taxonomy / mapping | v0 / v0 |
+| Data | TRAIL `gaia`, 115 of 117 traces (see Gaps) |
 | Output | `results/judged-trail-gaia-qwen3.8-27b-guidelines-257b897.jsonl` |
-| LSF job | 29163236 |
+| LSF jobs | 29163236, resumed by 29209305 |
 
 ### Observation
 
 | Metric | gaia (Qwen3.8, v0) | swe_bench (Qwen3.8, v0) | gaia run B (Qwen3-14B, v0) |
 |---|---|---|---|
-| trajectories | 113 | 31 | 117 |
-| judge annotations | 262 | 78 | 193 |
-| matched pairs | 136 | 41 | 67 |
-| localization precision | 0.519 | 0.526 | 0.347 |
-| localization recall | 0.278 | 0.172 | 0.131 |
-| localization F1 | **0.362** | 0.259 | 0.191 |
-| function accuracy (mapping v0) | **0.301** | 0.244 | 0.149 |
-| function chance / majority | 0.200 / 0.279 | 0.200 / 0.537 | 0.200 / 0.343 |
-| function kappa | **+0.101** | +0.111 | −0.084 |
-| function accuracy (mapping v2) | 0.323 | 0.310 | *unrecorded* |
-| function kappa (mapping v2) | +0.116 | +0.158 | *unrecorded* |
-| code accuracy / decidable | **0.189 / 127** | 0.034 / 29 | 0.048 / 63 |
-| code chance / majority | 0.042 / 0.205 | 0.042 / 0.621 | — |
-| severity accuracy | **0.684** | 0.537 | 0.537 |
+| trajectories | 115 | 31 | 117 |
+| judge annotations | 267 | 78 | 193 |
+| matched pairs | 140 | 41 | 67 |
+| localization precision | 0.524 | 0.526 | 0.347 |
+| localization recall | 0.279 | 0.172 | 0.131 |
+| localization F1 | **0.365** | 0.259 | 0.191 |
+| function accuracy | **0.293** | 0.244 | 0.149 |
+| function chance / majority | 0.200 / **0.279** | 0.200 / 0.537 | 0.200 / 0.343 |
+| function kappa | **+0.090** | +0.111 | −0.084 |
+| code accuracy / decidable | **0.183 / 131** | 0.034 / 29 | 0.048 / 63 |
+| code chance / majority | 0.042 / **0.206** | 0.042 / 0.621 | — |
+| severity accuracy | **0.693** | 0.537 | 0.537 |
 
-**The result separates from chance, which no swe_bench run has.** 41 correct of
-136 against 27.2 expected at a 0.200 chance rate is 3.0 standard deviations. Code
-accuracy is 24 of 127 against 5.3 expected, roughly 8 standard deviations. D8's
-best swe_bench figure was 0.7 standard deviations and was recorded as
-indistinguishable from chance; this is a different kind of result, and it is the
-first run that also exceeds the majority-class baseline, 0.301 against 0.279.
+The mapping v2 re-scoring recorded here on 2026-08-21 was computed on 113 traces
+and is not carried forward; it needs recomputing on the completed file before it
+is quoted.
 
-Confusion, expert function to judge function, 136 pairs: memory → reflection 22,
-reflection → reflection 19, action → planning 16, planning → reflection 13,
+**The function result clears uniform chance and does not clear the
+majority-class baseline.** 41 correct of 140 against 28.0 expected at a 0.200
+chance rate is 2.7 standard deviations. Against always answering the most common
+expert class, 0.279, the expectation is 39.1 correct and the observed 41 is 0.4
+standard deviations away, which is nothing. D8's best swe_bench figure was 0.7
+standard deviations against chance and was recorded as indistinguishable from it;
+this run is a real improvement on that comparison and not on the harder one.
+
+**On the error code the judge is below its majority baseline**, 0.183 against
+0.206. It clears uniform chance at 0.042 by about 8 standard deviations, 24
+correct of 131 against 5.5 expected, but uniform chance is not the baseline a
+reader should be offered when a constant predictor does better.
+
+Two measures do separate on the harder baseline. Severity accuracy is 0.693.
+Localization precision is 0.524, so about half of what the judge points at is an
+error the expert also recorded, against a recall of 0.279.
+
+Confusion, expert function to judge function, 140 pairs: memory → reflection 23,
+reflection → reflection 19, action → planning 18, planning → reflection 13,
 action → reflection 12, planning → planning 10, memory → planning 9, action →
-action 9, reflection → planning 6, reflection → memory 4, memory → action 4,
-memory → memory 3, planning → action 3, system → planning 3, and four singletons.
+action 9, reflection → planning 6, reflection → memory 5, memory → action 4,
+memory → memory 3, planning → action 3, system → planning 3, and three
+singletons.
+
+The judge answers `reflection` or `planning` for 106 of 140 pairs regardless of
+what the expert recorded. That is a systematic bias toward two of five classes
+rather than noise, and it is the mechanism behind a function accuracy that sits
+on top of the majority-class rate.
 
 Per TRAIL category:
 
 | Category | pairs | expert | agree |
 |---|---|---|---|
+| Language-only | 27 | memory | 3 |
 | Tool-related | 26 | reflection | 16 |
-| Language-only | 26 | memory | 3 |
-| Tool Selection Errors | 20 | action | 6 |
+| Tool Selection Errors | 21 | action | 6 |
 | Goal Deviation | 19 | planning | 5 |
-| Formatting Errors | 17 | action | 3 |
+| Formatting Errors | 18 | action | 3 |
 | Instruction Non-compliance | 9 | memory | 0 |
+| Tool Output Misinterpretation | 5 | reflection | 3 |
 | Resource Abuse | 5 | planning | 3 |
-| Tool Output Misinterpretation | 4 | reflection | 3 |
 | Incorrect Problem Identification | 3 | planning | 2 |
 | Context Handling Failures | 3 | memory | 0 |
 | Environment Setup Errors | 3 | system | 0 |
@@ -885,33 +903,44 @@ Per TRAIL category:
 ### Judge validity is split-dependent
 
 The same judge, the same guidelines, the same taxonomy and the same mapping give
-0.244 on swe_bench and 0.301 on gaia, and only the second separates from chance.
-Localization recall differs more sharply still, 0.172 against 0.278.
+0.244 on swe_bench and 0.293 on gaia. Localization recall differs more sharply,
+0.172 against 0.279. The majority-class baseline also differs, 0.537 against
+0.279, which is why the same accuracy means different things on the two splits.
 
 Two contested categories reproduce here, which matters because they were
 identified on swe_bench and gaia had no part in identifying them. Formatting
-Errors is 3 of 17 with the judge answering planning 11 times, the same
+Errors is 3 of 18 with the judge answering planning 12 times, the same
 disagreement guidelines v2 was written for and failed to move. Instruction
 Non-compliance is 0 of 9, and Context Handling Failures 0 of 3, both the mapping
 ambiguities D10 closed as reported rather than remapped. A disagreement that
 appears on held-out data is evidence about the taxonomy boundary rather than a
 quirk of one split.
 
-The largest single block is new: Language-only, 26 pairs mapped to memory, of
-which the judge answers reflection 17 times and agrees 3 times. It does not
+The largest single block is new: Language-only, 27 pairs mapped to memory, of
+which the judge answers reflection 18 times and agrees 3 times. It does not
 appear in swe_bench at this size.
+
+### The headline is not stable to a couple of traces
+
+Completing the split from 113 to 115 traces moved function accuracy from 0.301 to
+0.293 and kappa from +0.101 to +0.090, and moved the run from just above the
+majority-class baseline to level with it. Two traces should not decide whether a
+result clears a baseline. At 140 matched pairs the interval around 0.293 is wide
+enough that the honest report gives the baselines alongside the estimate and
+avoids a claim that rests on single-digit counts.
 
 ### Gaps
 
-- **113 of 117 traces.** The run exited on a socket timeout to its own vLLM at
-  trace 113, with exit code 1, despite `--keep-going`. The missing four are the
-  tail of the iteration order rather than a length-biased subset, but the run is
-  a truncation and the figures above are computed on 96.6% of the split. A resume
-  run completes it, since `--resume` is the default and the output path is
-  derived from the model and guidelines reference.
-- A read timeout to a local server should not end a `--keep-going` run. That it
-  does is a defect in `judge()`'s error classification, not a property of the
-  data.
+- **115 of 117 traces.** Two traces failed for stated reasons rather than
+  silently. `b241cb7d…` exceeds the context window, 32 769 input tokens plus
+  8 192 requested output against a 40 960 ceiling. `27a6c5eb…` returned
+  unparseable JSON on all three attempts. Both were skipped by `--keep-going`,
+  which is the timeout fix of 2026-08-22 working as intended; the first run
+  exited on a socket timeout at trace 113 because a read timeout is an `OSError`
+  and escaped the handler.
+- The context failure is a length bias of exactly one trace, and raising
+  `--max-model-len` for a single trace would break the pinned serving
+  configuration the rest of the split was judged under. It is left as recorded.
 - Run B's kappa, code accuracy and severity are recorded, but its localization
   precision and recall come from a different judge, so the third column above
   compares a model change and a nothing-else-held-fixed comparison.
@@ -1271,6 +1300,45 @@ re-scored under any variant at no inference cost. Closing the mapping constrains
 which variants exist, not what may be recomputed from labels already collected.
 
 ---
+
+### D11 — subquestion 2's answer: the judge is usable for localization and severity, and is not yet usable for the function axis (2026-08-29)
+
+**Evidence.** The completed held-out gaia run, 115 of 117 traces, judge
+`Qwen/Qwen3.8-27B` at temperature 0 under guidelines v0 and mapping v0, LSF jobs
+29163236 and 29209305. 140 matched pairs against TRAIL's expert annotations.
+
+**What clears the majority-class baseline.** Severity accuracy 0.693.
+Localization precision 0.524 at recall 0.279, so roughly half of the events the
+judge flags are events an expert also flagged, while it finds under a third of
+what the experts found. Both are reportable as they stand.
+
+**What does not.** Function accuracy 0.293 against a majority-class rate of
+0.279, a difference of two annotations in 140 and 0.4 standard deviations. Code
+accuracy 0.183 against a majority-class rate of 0.206, below it. Kappa +0.090.
+Uniform chance is cleared on both axes and is the wrong baseline to report
+alone, because a constant predictor beats the judge on the code axis.
+
+**Why, mechanically.** The judge answers `reflection` or `planning` for 106 of
+140 pairs whatever the expert recorded. A two-class habit over a five-class
+scheme produces an accuracy near the majority rate by construction, and it
+explains why three guideline revisions moved nothing: the revisions addressed
+category boundaries, and the failure is not at a boundary.
+
+**Consequence for the report.** Subquestion 2 is answered, and the answer is
+partly negative. The framework's localization and severity labels rest on
+measured agreement. Its cognitive-function labels do not yet, and every
+downstream use of the function axis, including the failure distributions
+subquestions 1, 3 and 4 report, carries that limitation explicitly rather than
+by implication.
+
+**What this does not license.** Writing guidelines v3 against the gaia confusion
+matrix. gaia is the only held-out split and three revisions have already been
+fitted to swe_bench with negative transfer (D9). Fitting the last clean split
+would leave the project with no out-of-sample estimate at all.
+
+**Gate for revisiting.** Expert-annotated terminal trajectories, or a second
+held-out split from a source other than TRAIL. Neither exists today, which is
+itself a finding about the field and belongs in the report as one.
 
 ## Known gaps
 
