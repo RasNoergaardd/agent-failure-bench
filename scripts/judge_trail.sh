@@ -94,6 +94,16 @@ MAX_MODEL_LEN="${MAX_MODEL_LEN:-40960}"
 # concurrent job reads its guidelines from the same checkout.
 GUIDELINES_REF="${GUIDELINES_REF:-}"
 CHAR_BUDGET="${CHAR_BUDGET:-100000}"   # keeps a trajectory inside the context window
+# A Harbor job directory. Setting it judges Terminal-Bench trajectories instead
+# of TRAIL traces, which is subquestion 1's evidence rather than subquestion 2's.
+# Everything else about the job is identical on purpose: the same judge model,
+# the same guidelines and the same sampling, so that the escape-hatch rate and
+# the agreement figures describe one annotator rather than two.
+#
+#   bsub -env "all, WORK=/work3/s225786, MODEL=Qwen/Qwen3.8-27B, LIMIT=all, \
+#              RUNS=/work3/s225786/harbor-test/jobs/2026-08-30__09-08-11" \
+#        < scripts/judge_trail.sh
+RUNS="${RUNS:-}"
 SERVER_TIMEOUT="${SERVER_TIMEOUT:-1800}"  # weights download on a cold cache is slow
 
 # `bsub < script` feeds this file on stdin, so BASH_SOURCE is not a path and
@@ -132,6 +142,9 @@ if ! [ "$MAX_TOKENS" -gt 0 ] 2>/dev/null; then
     echo "MAX_TOKENS must be a positive integer, got '$MAX_TOKENS'." >&2
     exit 1
 fi
+if [ -n "$RUNS" ] && [ ! -d "$RUNS" ]; then
+    echo "RUNS='$RUNS' is not a directory." >&2; exit 1
+fi
 if [ ! -f "$REPO/pyproject.toml" ]; then
     echo "REPO='$REPO' is not the checkout: no pyproject.toml there." >&2
     exit 1
@@ -142,6 +155,7 @@ mkdir -p logs results "$HF_HOME"
 
 echo "=== $(date) | job ${LSB_JOBID:-local} on $(hostname) ==="
 echo "model=$MODEL tp=$TP thinking=$THINKING max_tokens=$MAX_TOKENS"
+echo "runs=${RUNS:-<trail>}"
 echo "split=$SPLIT limit=${LIMIT:-all} char_budget=$CHAR_BUDGET repo=$REPO"
 echo "CHECK THESE LINES MATCH WHAT YOU SUBMITTED before trusting the results."
 nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv || true
@@ -285,21 +299,32 @@ MODEL_SLUG="$(printf '%s' "${MODEL##*/}" | tr '[:upper:]' '[:lower:]' | tr -c 'a
               | sed 's/-\{2,\}/-/g; s/^-//; s/-$//')"
 [ "$THINKING" = on ] && MODEL_SLUG="${MODEL_SLUG}-thinking"
 [ -n "$GUIDELINES_REF" ] && MODEL_SLUG="${MODEL_SLUG}-guidelines-${GUIDELINES_REF}"
-OUT="${OUT:-results/judged-trail-${SPLIT}-${MODEL_SLUG}.jsonl}"
-
-echo "--- judging $SPLIT -> $OUT ---"
-# Branching rather than expanding a possibly-empty array, which trips `set -u`.
-if [ -n "$LIMIT" ]; then
-    afb judge-trail --split "$SPLIT" --char-budget "$CHAR_BUDGET" \
-        --out "$OUT" --keep-going --limit "$LIMIT"
-else
-    afb judge-trail --split "$SPLIT" --char-budget "$CHAR_BUDGET" \
+if [ -n "$RUNS" ]; then
+    RUN_SLUG="$(basename "$RUNS" | tr -c 'a-z0-9.' '-' | sed 's/-\{2,\}/-/g; s/^-//; s/-$//')"
+    OUT="${OUT:-results/judged-runs-${RUN_SLUG}-${MODEL_SLUG}.jsonl}"
+    echo "--- judging $RUNS -> $OUT ---"
+    afb judge-runs --runs "$RUNS" --char-budget "$CHAR_BUDGET" \
         --out "$OUT" --keep-going
+else
+    OUT="${OUT:-results/judged-trail-${SPLIT}-${MODEL_SLUG}.jsonl}"
+    echo "--- judging $SPLIT -> $OUT ---"
+    # Branching rather than expanding a possibly-empty array, which trips `set -u`.
+    if [ -n "$LIMIT" ]; then
+        afb judge-trail --split "$SPLIT" --char-budget "$CHAR_BUDGET" \
+            --out "$OUT" --keep-going --limit "$LIMIT"
+    else
+        afb judge-trail --split "$SPLIT" --char-budget "$CHAR_BUDGET" \
+            --out "$OUT" --keep-going
+    fi
 fi
 
 # --- analyse ---------------------------------------------------------------
-echo "--- agreement (subquestion 2) ---"
-afb agreement --judged "$OUT" --splits "$SPLIT" --confusion
+# Agreement needs expert labels, which only TRAIL has. Coverage is the
+# subquestion 1 evidence and applies to both.
+if [ -z "$RUNS" ]; then
+    echo "--- agreement (subquestion 2) ---"
+    afb agreement --judged "$OUT" --splits "$SPLIT" --confusion
+fi
 
 echo "--- taxonomy coverage (subquestion 1) ---"
 afb coverage --judged "$OUT"
