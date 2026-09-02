@@ -10,12 +10,15 @@
 # size you get. A 27B model in BF16 is about 54 GB of weights and will not load
 # on a 40 GB card at any context length; on 2026-09-02 a job landed on one and
 # died with a CUDA OOM on the weights three minutes in. Ask for the size on the
-# command line, where a selector replaces nothing in this file:
+# command line, and restate span there too, because a command-line -R REPLACES
+# the -R directives in this file rather than adding to them:
 #
-#   bsub -R "select[gpu80gb]" -env "all, MODEL=Qwen/Qwen3.8-27B, TP=1, ..." < <this script>
+#   bsub -R "select[gpu80gb] span[hosts=1]" \
+#        -env "all, MODEL=Qwen/Qwen3.8-27B, TP=1, ..." < <this script>
 #
-# A selector written here instead would be ANDed with anything given on the
-# command line rather than replaced by it, which silently excludes other queues.
+# A selector written into this file instead would be ANDed with anything given
+# on the command line, which silently excludes every queue whose cards are a
+# different size.
 # MIN_GPU_MB below turns a wrong allocation into an immediate refusal rather
 # than a load failure.
 #BSUB -W 12:00
