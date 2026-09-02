@@ -6,14 +6,18 @@
 #BSUB -R "rusage[mem=8GB]"
 #BSUB -M 9GB
 #BSUB -gpu "num=1:mode=exclusive_process"
-# The GPU model is selected by the queue, not by a -R selector. An
-# `-R "select[gpu40gb]"` here would be ANDed with anything given on the command
-# line rather than replaced by it, which silently excludes every queue whose
-# cards are a different size: gpuh100 has 80 GB per GPU and far shorter waits
-# than gpua100, and a 27B model in BF16 fits one of those where it needs two
-# A100s. Override the queue on the command line:
+# `gpua100` holds both 40 GB and 80 GB cards, so the queue does NOT decide which
+# size you get. A 27B model in BF16 is about 54 GB of weights and will not load
+# on a 40 GB card at any context length; on 2026-09-02 a job landed on one and
+# died with a CUDA OOM on the weights three minutes in. Ask for the size on the
+# command line, where a selector replaces nothing in this file:
 #
-#   bsub -q gpuh100 -gpu "num=1:mode=exclusive_process" -env "all, TP=1, ..." < <this script>
+#   bsub -R "select[gpu80gb]" -env "all, MODEL=Qwen/Qwen3.8-27B, TP=1, ..." < <this script>
+#
+# A selector written here instead would be ANDed with anything given on the
+# command line rather than replaced by it, which silently excludes other queues.
+# MIN_GPU_MB below turns a wrong allocation into an immediate refusal rather
+# than a load failure.
 #BSUB -W 08:00
 #BSUB -o logs/afb-judge_%J.out
 #BSUB -e logs/afb-judge_%J.err
@@ -171,6 +175,20 @@ if ! command -v nvidia-smi > /dev/null 2>&1; then
     echo "Submit this with 'bsub < $0' rather than running it directly." >&2
     exit 1
 fi
+# Refuse a card too small for the model before spending three minutes loading
+# weights onto it. `gpua100` mixes 40 GB and 80 GB cards and hands out either.
+MIN_GPU_MB="${MIN_GPU_MB:-}"
+if [ -n "$MIN_GPU_MB" ]; then
+    SMALLEST_GPU_MB="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits \
+                       | sort -n | head -1 | tr -d ' ')"
+    if [ "${SMALLEST_GPU_MB:-0}" -lt "$MIN_GPU_MB" ]; then
+        echo "smallest allocated GPU has ${SMALLEST_GPU_MB}MB, MIN_GPU_MB=$MIN_GPU_MB." >&2
+        echo "Ask for the larger card on the command line:" >&2
+        echo "  bsub -R \"select[gpu80gb]\" -env \"all, ...\" < $0" >&2
+        exit 1
+    fi
+fi
+
 GPU_COUNT="$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l | tr -d ' ')"
 if [ "$TP" != "$GPU_COUNT" ]; then
     echo "TP=$TP but $GPU_COUNT GPU(s) are allocated." >&2
