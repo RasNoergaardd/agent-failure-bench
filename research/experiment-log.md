@@ -947,6 +947,160 @@ avoids a claim that rests on single-digit counts.
 
 ---
 
+## Run 2026-08-30 — the breadth batch, 89 Terminal-Bench 2.0 tasks
+
+The first complete agent run. Subquestion 1 needs breadth rather than depth, so
+every task once.
+
+| Field | Value |
+|---|---|
+| Agent | `terminus-2` driving `Qwen/Qwen3-32B-AWQ`, 4-bit, one A100-40GB, TP=1 |
+| Sampling | agent temperature unset, so vLLM served the checkpoint's 0.6 |
+| Context | `--max-model-len 40960` |
+| Harness | Harbor 0.18.0, `-e singularity` behind `scripts/udocker-shim/singularity`, udocker 1.3.17 |
+| Timeouts | `--timeout-multiplier 2.0` |
+| Concurrency | 4 |
+| Containers | node-local scratch, `/tmp/udocker-29270416` |
+| Data | `terminal-bench/terminal-bench-2`, all 89 tasks, 1 attempt each |
+| Output | `/work3/s225786/harbor-test/jobs/2026-08-30__09-08-11` |
+| LSF job | 29270416, 8h 01m |
+
+### Observation
+
+| | count |
+|---|---|
+| trials | 89 |
+| trajectories written | 89 |
+| tasks solved | **0** |
+| `AgentTimeoutError` | 21 |
+| `VerifierTimeoutError` | 1 |
+| `EnvironmentStartTimeoutError` | 0 |
+| `RuntimeError` (container server) | 0 |
+
+Every task produced a trajectory, and no trial was lost to the harness.
+
+### The harness failures are gone, and that took three attempts
+
+Two earlier attempts at this batch died at trial 50 of 89 with the disk quota
+exhausted, and between them lost 16 of 73 trials to environments that never
+started. Both causes were the same thing. `udocker create` copies an image into
+a private rootfs of about three gigabytes per trial, and on the shared parallel
+filesystem creating one is slow enough to miss Harbor's start deadline while
+deleting one is slower than producing the next. Moving the rootfs to node-local
+scratch fixed both at once and took the trials off the disk quota entirely.
+
+This matters for what the trajectories mean. Before the fix, 22% of trials
+failed for reasons belonging to udocker rather than to the agent, and a failure
+distribution computed over them would have been substantially about the harness.
+
+### The agent solved nothing
+
+0 of 89 is the result. It is a weak benchmark score and a clean one for a
+failure study, but it bounds what can be claimed: the distribution describes an
+agent operating below this benchmark's floor, not one that sometimes succeeds.
+
+The 21 agent timeouts are truncated trajectories rather than finished failures.
+Every command inside the container passes through PRoot, so a task budget tuned
+for Docker buys less real work here, which is why the multiplier was already at
+2. Whether these are classified or excluded is a reporting decision and is
+recorded in D12.
+
+### Gaps
+
+- One attempt per task, so this run says nothing about variation. That is
+  subquestion 3 and needs the repeat batch.
+- The agent is one model. Subquestion 4 has been dropped (D12), so no second
+  agent is compared.
+
+---
+
+## Run 2026-09-01/02 — judging the breadth batch
+
+Subquestion 1's evidence. Same judge, guidelines and sampling as the TRAIL
+validation, so the escape-hatch rate and the agreement figures describe one
+annotator rather than two.
+
+| Field | Value |
+|---|---|
+| Judge model | `Qwen/Qwen3.8-27B`, BF16, one A100-80GB, TP=1 |
+| Sampling | temperature 0, max_tokens 8192, thinking off |
+| Guidelines | `bc2c95ec…0744af` (v0, replayed from `257b897`) |
+| Data | the 89 trajectories of run 29270416 |
+| Output | `results/judged-runs-2026-08-30-qwen3.8-27b-ctx98304.jsonl` |
+| LSF jobs | 29290983 at `--max-model-len 40960`, 29299961 at 98304 |
+
+The first pass judged 80 of 89. The nine failures were all the same 400 from
+vLLM, a prompt longer than the 32 768 input tokens that a 40 960 window leaves
+after reserving 8 192 for the answer. Terminal trajectories tokenize badly,
+since hex, base64 and source cost far more tokens per character than prose, so a
+character budget that holds for TRAIL does not hold here. The exclusion was
+systematic rather than incidental: the nine dropped were the longest, which is to
+say the ones in which the agent did the most before failing. The whole set was
+re-judged at 98 304 rather than judging only the nine, because figures from two
+serving configurations should not share a table.
+
+### Observation
+
+348 annotations over 89 trajectories, taxonomy v0.
+
+| Function | annotations | share |
+|---|---|---|
+| reflection | 161 | 0.463 |
+| planning | 91 | 0.261 |
+| system | 53 | 0.152 |
+| action | 41 | 0.118 |
+| memory | 2 | 0.006 |
+
+By code: RFL-1 60, RFL-2 60, PLN-3 71, SYS-3 33, RFL-3 25, ACT-1 15, ACT-5 15,
+RFL-4 13, SYS-1 11, PLN-5 9, ACT-3 9, SYS-4 9, PLN-1 7, RFL-5 3, PLN-2 3, MEM-2
+2, ACT-2 2, PLN-4 1. Unused: MEM-1, MEM-3, ACT-4, ACT-6, SYS-2, SYS-5.
+
+**Escape hatch: 0 of 348.** Per D4 this is not evidence of taxonomy
+completeness.
+
+### The 80 reproduced exactly
+
+The re-judged set added exactly 28 annotations, and the per-code increases sum to
+exactly 28. The 80 trajectories judged in both passes therefore produced
+identical labels. Temperature 0 against a pinned serving stack is reproducible in
+practice and not only in principle, which is what principle 3 asks for and had
+not previously been demonstrated.
+
+### Unused does not mean unnecessary
+
+SYS-4, model or API failure, was used 0 times over 80 trajectories and 9 times
+over 89. A category that looked like a removal candidate was used nine times by
+the nine trajectories the context ceiling had excluded.
+
+SYS-2, timeout, was used 0 times across all 89, in a run where 21 trials ended in
+`AgentTimeoutError`. A code that names exactly what happened in a quarter of the
+trials went unused.
+
+Together these say that an unused code may record that this judge does not reach
+for it rather than that the taxonomy does not need it. Any removal argued from
+usage counts alone is therefore weaker than the counts make it look.
+
+### The distribution may be the judge rather than the agent
+
+Reflection and planning account for 72.4% of the terminal annotations. On TRAIL
+the same judge answered reflection or planning for 75.7% of matched pairs
+regardless of what the expert recorded (D11). The two figures agreeing this
+closely is consistent with the terminal distribution being produced by the same
+two-class habit rather than by anything about the agent.
+
+This cannot be resolved from the present data. It would need expert labels on
+terminal trajectories, which is the gap D11 already names.
+
+### Gaps
+
+- The function distribution above is reported as an observation and is not
+  interpreted as the agent's failure profile, per principle 6 and the paragraph
+  above.
+- Nothing here separates a systematic failure from a stochastic one. One attempt
+  per task cannot.
+
+---
+
 ## Decisions
 
 ### D1 — match tolerance fixed at 0 events (2026-07-30)
@@ -1339,6 +1493,53 @@ would leave the project with no out-of-sample estimate at all.
 **Gate for revisiting.** Expert-annotated terminal trajectories, or a second
 held-out split from a source other than TRAIL. Neither exists today, which is
 itself a finding about the field and belongs in the report as one.
+
+### D12 — what subquestion 1 concludes, and the two scope changes it comes with (2026-09-03)
+
+**Evidence.** 348 annotations over 89 Terminal-Bench 2.0 trajectories, judge
+`Qwen3.8-27B` under guidelines v0, LSF job 29299961; and 267 annotations over
+115 TRAIL gaia traces from the same judge and guidelines, LSF jobs 29163236 and
+29209305.
+
+**No taxonomy v1 is cut on this evidence.** Four codes were unused on both
+corpora, MEM-3, ACT-6, SYS-2 and SYS-5, and two corpora from different task
+domains agreeing is the strongest removal signal available. It is still not
+enough, for a reason this run supplies directly. SYS-4 went from unused over 80
+trajectories to nine uses over 89 once the longest were included, so a usage
+count of zero is fragile to sampling. SYS-2 went unused across a run in which 21
+trials timed out, so a usage count of zero can record the judge's behaviour
+rather than the taxonomy's adequacy. Removing a category on counts that carry
+both failure modes would be a revision fitted to one annotator.
+
+**What is reported instead.** The coverage tables, the zero escape-hatch rate
+with D4's caveat attached, and the four-code intersection as a revision
+candidate for future work with the conditions under which it would be acted on.
+
+**Gate for a v1.** Either expert labels on terminal trajectories, which would
+separate a category nobody needs from a category this judge will not reach for,
+or a second annotator whose unused set can be intersected with this one.
+
+**Scope change: subquestion 4 is dropped.** The comparison against a second
+agent is out of scope for this report and moves to future work. The report
+therefore states three subquestions, not four. `CLAUDE.md` and
+`research/experiment-design-rq3-rq4.md` both still say four and are corrected by
+this entry.
+
+**Scope correction: subquestion 3 is not blocked.** It was noted during the run
+that 0 successes in 89 would make subquestion 3 degenerate and force a move to
+Terminal-Bench 1.0. That was wrong. `runs.TaskVariance` decides systematic
+versus stochastic from `runs_with_code`, whether an error code recurs across
+repeats of a task, and outcome stability is reported alongside as context rather
+than used as the measure. Every task failing every time leaves the question
+"does it fail the same way" fully answerable. The project stays on Terminal-Bench
+2.0 and no benchmark switch is needed.
+
+**Truncated trials.** The 21 `AgentTimeoutError` trajectories are classified
+rather than excluded, and the timeout multiplier of 2.0 is stated as a condition
+of the result. They contain real agent behaviour up to the point of truncation,
+and excluding a quarter of the run would bias the distribution toward tasks the
+agent abandoned early. The `VerifierTimeoutError` trial is excluded, since its
+outcome is unknown rather than truncated.
 
 ## Known gaps
 

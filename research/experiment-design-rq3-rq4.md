@@ -1,5 +1,17 @@
 # Experiment design: subquestions 3 and 4
 
+> **2026-09-03: subquestion 4 is dropped.** The comparison against a second
+> agent is out of scope for this report and moves to future work, per D12 in
+> `experiment-log.md`. The RQ4 sections below are retained as a design record
+> for whoever picks it up, and are not part of the report's scope.
+>
+> **The RQ3 design stands, with one correction.** It was noted during the
+> 2026-08-30 run that 0 successes in 89 tasks would leave subquestion 3 with no
+> outcome variance and force a move to Terminal-Bench 1.0. That was wrong.
+> `runs.TaskVariance` decides systematic versus stochastic from whether an error
+> code recurs across repeats, not from whether the outcome changes, so a task
+> that fails every time is still informative. No benchmark switch is needed.
+
 Written before any Terminal-Bench run, as principle 1 requires. `afb/runs.py`
 already implements the analysis; what follows fixes the parameters it will be run
 with, and says what would count as an answer, so that neither can be chosen after
