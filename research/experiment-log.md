@@ -1101,6 +1101,176 @@ terminal trajectories, which is the gap D11 already names.
 
 ---
 
+## Run 2026-09-02/03 — the repeat batch, 12 tasks x 10 attempts
+
+Subquestion 3. The opposite shape to the breadth batch: few tasks, many repeats,
+so that variation across identical runs can be measured.
+
+| Field | Value |
+|---|---|
+| Agent | `terminus-2` driving `Qwen/Qwen3-32B-AWQ`, 4-bit, one A100-40GB, TP=1 |
+| Sampling | agent temperature unset, so vLLM served the checkpoint's 0.6 |
+| Context | `--max-model-len 40960` |
+| Timeouts | `--timeout-multiplier 2.0` |
+| Concurrency | 4 |
+| Containers | node-local scratch, `/tmp/udocker-29299964` |
+| Data | first 12 tasks of `terminal-bench-2` in dataset order, 10 attempts each |
+| Output | `/work3/s225786/harbor-test/jobs/2026-09-02__23-50-19` |
+| LSF job | 29299964, 15h 23m |
+| Tokens | 45.9 M input, 3.1 M output |
+
+Sampling is the experiment here rather than a detail. The agent samples at the
+checkpoint's temperature 0.6, which is what makes repeats differ; a temperature
+of 0 would have reproduced one run twelve times and measured nothing.
+
+### Observation
+
+| | count |
+|---|---|
+| trials | 120 |
+| trajectories written | 120 |
+| tasks solved | **0** |
+| `AgentTimeoutError` | 26 |
+| `EnvironmentStartTimeoutError` | 0 |
+
+Zero successes across every repeat of every task. Taken with the breadth batch's
+0 of 89, this is 209 trials without a single solve, so the earlier result was not
+one unlucky sample.
+
+Timeout rate varies sharply by task: `break-filter-js-from-html` 7 of 10,
+`adaptive-rejection-sampler` 5 of 10, `circuit-fibsqrt` 3 of 10, five tasks at 2
+of 10, `build-cython-ext` 1 of 10, and `cancel-async-tasks`, `chess-best-move`
+and `code-from-image` at 0 of 10.
+
+### Two trials livelocked
+
+Two `build-pov-ray` repeats spent hours in a Terminus summarization retry loop,
+their trajectories frozen while `trial.log` cycled through "Attempting full
+summary", "Full summary failed", "Attempting short summary". Both ended on the
+agent timeout, at 24 000 seconds, which is `timeout_sec = 12000` doubled by the
+multiplier.
+
+The cause is most likely the agent's own context ceiling. Terminus summarizes its
+history when the context fills, and the summarization request carries that
+history, so against `--max-model-len 40960` a long enough run produces a request
+that cannot fit and cannot be made to fit by retrying.
+
+Those two trajectories are 1.65 MB and 1.78 MB against the other eight repeats of
+the same task at 19 to 57 KB, a 95x spread within one task. They are also the two
+the judge could not label, since the prompt exceeds even the 98 304 window.
+
+This is a genuine agent failure mode, produced by the interaction between the
+scaffolding's summarization strategy and the served context length, and it is
+worth reporting as such rather than as an outlier.
+
+---
+
+## Analysis 2026-09-03 — judging the repeat batch, and the variance result
+
+| Field | Value |
+|---|---|
+| Judge model | `Qwen/Qwen3.8-27B`, BF16, one A100-80GB, TP=1 |
+| Sampling | temperature 0, max_tokens 8192, thinking off |
+| Context | `--max-model-len 98304`, prompt char budget 100 000 |
+| Guidelines | `bc2c95ec…0744af` (v0, replayed from `257b897`) |
+| Data | 118 of 120 trajectories |
+| Output | `results/judged-runs-repeats-qwen3.8-27b-ctx98304.jsonl` |
+| LSF job | 29309083 |
+
+Two trajectories failed to label, both the livelocked `build-pov-ray` repeats
+described above, both for exceeding the context window.
+
+### Coverage
+
+457 annotations over 118 trajectories, taxonomy v0. Escape hatch 0 of 457.
+
+| Function | annotations | share |
+|---|---|---|
+| reflection | 207 | 0.453 |
+| planning | 147 | 0.322 |
+| system | 70 | 0.153 |
+| action | 32 | 0.070 |
+| memory | 1 | 0.002 |
+
+Unused: MEM-1, MEM-3, ACT-2, ACT-4, ACT-6, SYS-2, SYS-5.
+
+Two things follow for D12's reasoning, and both support it. **MEM-3, ACT-6,
+SYS-2 and SYS-5 are now unused on a third corpus**, having been unused on TRAIL
+gaia and on the breadth batch. And **ACT-2 moved from two uses in the breadth
+batch to zero here**, on an overlapping task set with the same agent, which is a
+third instance of a usage count of zero being unstable between runs.
+
+**SYS-2, timeout, remains unused across a batch in which 26 of 120 trials ended
+in `AgentTimeoutError`.** Over both terminal runs that is 47 timeouts and no use
+of the timeout code.
+
+Reflection and planning account for 77.5% of annotations here, against 72.4% on
+the breadth batch and 75.7% of matched pairs on TRAIL. The judge's two-class
+concentration is stable across three datasets.
+
+### Variance, `afb variance` at the pre-registered thresholds
+
+| threshold | systematic | stochastic | systematic share |
+|---|---|---|---|
+| 0.6 | 32 | 78 | 0.291 |
+| 0.8 | 19 | 91 | **0.173** |
+| 1.0 | 5 | 105 | 0.045 |
+
+`tasks_with_unstable_outcome` is 0 at every threshold, since every task failed in
+every repeat.
+
+**The outcome is perfectly systematic and the cause is predominantly
+stochastic.** Stochastic findings outnumber systematic ones at every threshold,
+71%, 83% and 96%, so the direction of the answer does not depend on where the
+line is drawn. The share itself does, by a factor of 6.5 across the pre-registered
+range, and should not be quoted without them.
+
+At threshold 0.8, per task:
+
+| Task | systematic codes |
+|---|---|
+| adaptive-rejection-sampler | PLN-3 90% |
+| bn-fit-modify | PLN-3 90% |
+| break-filter-js-from-html | PLN-3 100%, RFL-1 80% |
+| build-cython-ext | RFL-1 100%, PLN-3 90%, RFL-2 90% |
+| build-pmars | PLN-3 100%, RFL-1 90% |
+| build-pov-ray | PLN-3 100%, RFL-1 88% |
+| caffe-cifar-10 | PLN-3 100% |
+| cancel-async-tasks | RFL-3 90% |
+| chess-best-move | RFL-1 90%, RFL-2 80% |
+| circuit-fibsqrt | PLN-3 90% |
+| cobol-modernization | SYS-3 90%, PLN-3 90% |
+| code-from-image | PLN-1 80% |
+
+**PLN-3, redundant looping, is systematic in 10 of 12 tasks** at 90 to 100% of
+runs, and 4 of the 5 findings that survive threshold 1.0 are PLN-3. It is this
+agent's signature failure regardless of task.
+
+Three tasks depart from the pattern. `cancel-async-tasks` is led by RFL-3,
+verification omission, at 90% with PLN-3 only at 70%. `code-from-image` is led by
+PLN-1, task misunderstanding, at 80%, and carries 12 stochastic codes, the most of
+any task, which is what reading a specification off an image would predict.
+`cobol-modernization` has SYS-3, environment defect, systematic at 90%, which
+points at the task environment rather than at the agent and should be checked
+before it is reported as agent behaviour.
+
+### Gaps
+
+- **The systematic findings sit almost entirely in PLN-3, RFL-1 and RFL-2**, the
+  codes the judge over-uses on every corpus measured. "This agent loops
+  systematically" and "this judge systematically answers looping" are not
+  separable from these data. D11's limitation propagates into this result
+  directly.
+- 12 tasks of 89, chosen in dataset order per the pre-registration. Nothing here
+  generalizes to the tasks not in that set.
+- Two trials of 120 are missing from the variance input, both from
+  `build-pov-ray`, which therefore has 8 repeats. Both were livelocks, so the
+  most extreme runs of that task are the ones absent from its labels.
+- 26 of 120 trajectories are truncated at the agent timeout, so a code absent
+  from one of those runs may be absent because the run was cut short.
+
+---
+
 ## Decisions
 
 ### D1 — match tolerance fixed at 0 events (2026-07-30)
@@ -1541,6 +1711,41 @@ and excluding a quarter of the run would bias the distribution toward tasks the
 agent abandoned early. The `VerifierTimeoutError` trial is excluded, since its
 outcome is unknown rather than truncated.
 
+### D13 — subquestion 3's answer: the outcome is systematic, the cause is not (2026-09-03)
+
+**Evidence.** 12 Terminal-Bench 2.0 tasks, 10 attempts each, agent
+`Qwen3-32B-AWQ` at the checkpoint's temperature 0.6, LSF job 29299964. 118 of 120
+trajectories labelled by `Qwen3.8-27B` under guidelines v0, LSF job 29309083.
+`afb variance` at the three pre-registered thresholds.
+
+**The answer.** Every task failed in every repeat, so the outcome carries no
+variance at all. The failure *cause* does. Stochastic findings outnumber
+systematic ones at every threshold, 71% at 0.6, 83% at 0.8 and 96% at 1.0. An
+agent that fails reproducibly does not fail reproducibly *for the same reason*,
+and a benchmark reporting only pass rates cannot see that distinction.
+
+**The number is reported with its sensitivity, not alone.** The systematic share
+moves from 0.291 to 0.045 across the pre-registered range, a factor of 6.5. The
+direction is invariant and the magnitude is not, so the report gives all three.
+
+**The one reproducible failure mode.** PLN-3, redundant looping, is systematic in
+10 of 12 tasks and accounts for 4 of the 5 findings surviving threshold 1.0. It is
+the only failure this agent commits identically across every repeat.
+
+**What this does not establish.** The systematic findings are concentrated in
+PLN-3, RFL-1 and RFL-2, which are the codes the judge over-uses on TRAIL, on the
+breadth batch and on this batch alike. A judge that answers reflection or
+planning three quarters of the time will produce recurring reflection and
+planning codes whether or not the agent is consistent. Separating the two needs
+expert labels on terminal trajectories, which is the same gate D11 and D12 name.
+
+**Method note, correcting an in-flight claim.** It was argued during the
+2026-08-30 run that 0 successes in 89 tasks would make subquestion 3 degenerate
+and force a move to Terminal-Bench 1.0. That was wrong, and the result above is
+why. `runs.TaskVariance` decides systematic versus stochastic from whether an
+error code recurs across repeats; outcome stability is reported alongside as
+context and is not the measure. The project stayed on one benchmark throughout.
+
 ## Known gaps
 
 - **vLLM version not captured** for runs A and B, which principle 4 requires
@@ -1574,17 +1779,31 @@ outcome is unknown rather than truncated.
   v2 were written from the 32B's errors on `swe_bench` and are harmful to a
   judge that does not share that error pattern. No revision may be validated on
   the judge whose errors motivated it, or on the split it was read from.
-- **Closed 2026-08-21: the held-out split has been judged.** Qwen3.8-27B under
-  guidelines v0 scores 0.301 on the function axis against a 0.200 chance rate,
-  three standard deviations out, on data that informed no rule. Outstanding: the
-  run covered 113 of 117 traces and needs completing, and judge validity is now
-  known to differ by split, which the report must state rather than quoting one
-  number.
-- **Closed 2026-08-21: an agent has run through Harbor and its trajectory
-  parses.** Terminus 2 driving Qwen3-32B-AWQ failed
-  `terminal-bench-2/sanitize-git-repo` in 3m41s, and `afb/harbor.py` reads the
-  result. D3's precondition for RQ1 revision evidence, and the precondition for
-  RQ3 and RQ4, are met. What remains is volume: repeats, and judging them.
+- **Closed 2026-08-29: the held-out split is complete, and the answer is
+  narrower than it first looked.** 115 of 117 traces. Qwen3.8-27B under
+  guidelines v0 scores 0.293 on the function axis against a 0.279 majority-class
+  rate, which is two annotations in 140, and 0.183 on the code axis against a
+  0.206 majority rate, below it. Severity at 0.693 and localization precision at
+  0.524 do separate. D11 records what this licenses. Judge validity also differs
+  by split, so the report gives baselines rather than a single number.
+- **Closed 2026-09-03: all agent runs are done.** 89 tasks once (LSF 29270416)
+  and 12 tasks ten times (LSF 29299964), 209 trials, 0 solved, 0 lost to the
+  harness. All labelled: 348 annotations over 89 and 457 over 118. D12 and D13
+  record what subquestions 1 and 3 conclude. No compute remains.
+- **The judge's two-class concentration is the largest open threat to every
+  labelled result.** Reflection and planning take 75.7% of matched pairs on
+  TRAIL, 72.4% of annotations on the breadth batch and 77.5% on the repeat
+  batch. Because subquestion 3's systematic findings sit almost entirely in
+  PLN-3, RFL-1 and RFL-2, an agent that loops consistently and a judge that
+  answers looping consistently cannot be told apart here. Resolving it needs
+  expert labels on terminal trajectories, which do not exist.
+- **A usage count of zero is unstable between runs.** SYS-4 went from 0 over 80
+  trajectories to 9 over 89; ACT-2 went from 2 on the breadth batch to 0 on the
+  repeat batch. SYS-2 stayed at 0 across 47 agent timeouts. D12 declines to cut
+  a taxonomy version on counts carrying both failure modes.
+- **`cobol-modernization` shows SYS-3, environment defect, systematic at 90%.**
+  That points at the task environment rather than the agent, and should be read
+  before it is reported as agent behaviour.
 - **The taxonomy and mappings were untracked until 2026-08-18.** `.gitignore`
   carried an unanchored `data/`, so `src/afb/data/` was excluded and no commit
   before `81cfde9` fully determined what any judge run read. Runs A through E
