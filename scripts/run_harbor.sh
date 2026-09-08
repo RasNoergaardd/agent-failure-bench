@@ -73,7 +73,11 @@ MAX_MODEL_LEN="${MAX_MODEL_LEN:-40960}"
 # short-context quality for reach, and the runs reported in the results were
 # executed without it. Set it only for a deliberate sensitivity run, and say so.
 #
-#   ROPE_SCALING='{"rope_type":"yarn","factor":3.2,"original_max_position_embeddings":40960}'
+# LSF splits -env on commas and this value contains them, so export it into the
+# submitting shell and let the leading `all` carry it through:
+#
+#   export ROPE_SCALING='{"rope_type":"yarn","factor":3.2,"original_max_position_embeddings":40960}'
+#   bsub -env "all, MAX_MODEL_LEN=131072, ..." < scripts/run_harbor.sh
 ROPE_SCALING="${ROPE_SCALING:-}"
 AGENT="${AGENT:-terminus-2}"
 TASKS="${TASKS:-}"                     # space-separated task paths, required
