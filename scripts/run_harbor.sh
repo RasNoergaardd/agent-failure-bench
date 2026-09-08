@@ -68,6 +68,13 @@ export VLLM_USE_FLASHINFER_SAMPLER=0   # compute nodes have no nvcc for the JIT
 MODEL="${MODEL:-Qwen/Qwen3-32B-AWQ}"
 TP="${TP:-1}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-40960}"
+# Qwen3-32B declares 40960 positions, so a longer context needs rope scaling
+# rather than a larger --max-model-len alone. Off by default: YaRN trades some
+# short-context quality for reach, and the runs reported in the results were
+# executed without it. Set it only for a deliberate sensitivity run, and say so.
+#
+#   ROPE_SCALING='{"rope_type":"yarn","factor":3.2,"original_max_position_embeddings":40960}'
+ROPE_SCALING="${ROPE_SCALING:-}"
 AGENT="${AGENT:-terminus-2}"
 TASKS="${TASKS:-}"                     # space-separated task paths, required
 N_ATTEMPTS="${N_ATTEMPTS:-1}"          # repeats per task; RQ3 needs many
@@ -179,6 +186,7 @@ fi
 
 echo "=== $(date) | job ${LSB_JOBID:-local} on $(hostname) ==="
 echo "model=$MODEL tp=$TP agent=$AGENT attempts=$N_ATTEMPTS timeout_x=$TIMEOUT_MULTIPLIER"
+echo "max_model_len=$MAX_MODEL_LEN rope_scaling=${ROPE_SCALING:-none}"
 echo "tasks=$TASKS"
 echo "CHECK THESE LINES MATCH WHAT YOU SUBMITTED before trusting the results."
 
@@ -238,11 +246,17 @@ git -C "$REPO" rev-parse --short HEAD 2>/dev/null | sed 's/^/afb commit /' || tr
 # --- serve the agent model -------------------------------------------------
 SERVER_LOG="logs/vllm_harbor_${LSB_JOBID:-local}.log"
 echo "--- starting vLLM, log: $SERVER_LOG ---"
+SERVE_ARGS=()
+if [ -n "$ROPE_SCALING" ]; then
+    SERVE_ARGS+=(--rope-scaling "$ROPE_SCALING")
+    echo "rope scaling enabled: $ROPE_SCALING"
+fi
 "$VENV/bin/vllm" serve "$MODEL" \
     --port "$PORT" \
     --max-model-len "$MAX_MODEL_LEN" \
     --tensor-parallel-size "$TP" \
     --gpu-memory-utilization 0.92 \
+    "${SERVE_ARGS[@]}" \
     > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 
