@@ -878,7 +878,7 @@ action 9, reflection → planning 6, reflection → memory 5, memory → action 
 memory → memory 3, planning → action 3, system → planning 3, and three
 singletons.
 
-The judge answers `reflection` or `planning` for 106 of 140 pairs regardless of
+The judge answers `reflection` or `planning` for 114 of 140 pairs, 81.4%, regardless of
 what the expert recorded. That is a systematic bias toward two of five classes
 rather than noise, and it is the mechanism behind a function accuracy that sits
 on top of the majority-class rate.
@@ -1083,10 +1083,12 @@ usage counts alone is therefore weaker than the counts make it look.
 ### The distribution may be the judge rather than the agent
 
 Reflection and planning account for 72.4% of the terminal annotations. On TRAIL
-the same judge answered reflection or planning for 75.7% of matched pairs
-regardless of what the expert recorded (D11). The two figures agreeing this
-closely is consistent with the terminal distribution being produced by the same
-two-class habit rather than by anything about the agent.
+the same judge answered reflection or planning for 81.4% of matched pairs
+regardless of what the expert recorded (D11), where the expert marginal put those
+two classes far lower. The terminal figure is not as high, but it is the same
+habit, and on TRAIL that habit is measurably not a property of the data. So a
+terminal distribution dominated by the same two classes cannot be attributed to
+the agent on this evidence.
 
 This cannot be resolved from the present data. It would need expert labels on
 terminal trajectories, which is the gap D11 already names.
@@ -1205,8 +1207,8 @@ in `AgentTimeoutError`.** Over both terminal runs that is 47 timeouts and no use
 of the timeout code.
 
 Reflection and planning account for 77.5% of annotations here, against 72.4% on
-the breadth batch and 75.7% of matched pairs on TRAIL. The judge's two-class
-concentration is stable across three datasets.
+the breadth batch and 81.4% of matched pairs on TRAIL. The judge's two-class
+concentration is present on all three datasets.
 
 ### Variance, `afb variance` at the pre-registered thresholds
 
@@ -1791,7 +1793,7 @@ context and is not the measure. The project stayed on one benchmark throughout.
   harness. All labelled: 348 annotations over 89 and 457 over 118. D12 and D13
   record what subquestions 1 and 3 conclude. No compute remains.
 - **The judge's two-class concentration is the largest open threat to every
-  labelled result.** Reflection and planning take 75.7% of matched pairs on
+  labelled result.** Reflection and planning take 81.4% of matched pairs on
   TRAIL, 72.4% of annotations on the breadth batch and 77.5% on the repeat
   batch. Because subquestion 3's systematic findings sit almost entirely in
   PLN-3, RFL-1 and RFL-2, an agent that loops consistently and a judge that
