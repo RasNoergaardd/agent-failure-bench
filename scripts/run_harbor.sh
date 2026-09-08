@@ -69,9 +69,10 @@ MODEL="${MODEL:-Qwen/Qwen3-32B-AWQ}"
 TP="${TP:-1}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-40960}"
 # Qwen3-32B declares 40960 positions, so a longer context needs rope scaling
-# rather than a larger --max-model-len alone. Off by default: YaRN trades some
+# rather than a larger --max-model-len alone. Off by default. YaRN trades some
 # short-context quality for reach, and the runs reported in the results were
-# executed without it. Set it only for a deliberate sensitivity run, and say so.
+# executed without it, so set it only for a deliberate sensitivity run.
+# Give the inner object only; the script wraps it for --hf-overrides.
 #
 # LSF splits -env on commas and this value contains them, so export it into the
 # submitting shell and let the leading `all` carry it through:
@@ -252,8 +253,11 @@ SERVER_LOG="logs/vllm_harbor_${LSB_JOBID:-local}.log"
 echo "--- starting vLLM, log: $SERVER_LOG ---"
 SERVE_ARGS=()
 if [ -n "$ROPE_SCALING" ]; then
-    SERVE_ARGS+=(--rope-scaling "$ROPE_SCALING")
-    echo "rope scaling enabled: $ROPE_SCALING"
+    # vLLM 0.27 has no --rope-scaling. Configuration that belongs to the model's
+    # own config.json goes through --hf-overrides, so the value is wrapped here
+    # rather than in the submit command.
+    SERVE_ARGS+=(--hf-overrides "{\"rope_scaling\":$ROPE_SCALING}")
+    echo "rope scaling enabled: {\"rope_scaling\":$ROPE_SCALING}"
 fi
 "$VENV/bin/vllm" serve "$MODEL" \
     --port "$PORT" \
