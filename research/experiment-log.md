@@ -1273,6 +1273,65 @@ before it is reported as agent behaviour.
 
 ---
 
+## Run 2026-09-08/09 — configuration sensitivity, 89 tasks at a larger context and clock
+
+Tests whether the 0 of 89 is a property of the model or of the configuration it
+was served under. Two handicaps of the reported runs had direct evidence of
+harm: a 40 960 token context, which livelocked two `build-pov-ray` repeats in
+Terminus's summarization retry, and a timeout budget that 22.5% of trials ran out
+of even at a multiplier of 2.
+
+| Field | Value |
+|---|---|
+| Agent | `terminus-2` driving `Qwen/Qwen3-32B-AWQ`, 4-bit, one A100-80GB, TP=1 |
+| Sampling | agent temperature unset, checkpoint's 0.6 |
+| Context | `--max-model-len 131072`, YaRN via `--hf-overrides`, factor 3.2 from 40 960 |
+| Timeouts | `--timeout-multiplier 4.0` |
+| Data | all 89 tasks, 1 attempt each |
+| Output | `/work3/s225786/harbor-test/jobs/2026-09-08__12-28-26` |
+| LSF job | 29350039 |
+
+Two earlier submissions failed before running anything. LSF splits `-env` on
+commas and the rope scaling JSON contains them, and vLLM 0.27 has no
+`--rope-scaling` flag, taking it through `--hf-overrides` instead.
+
+### Observation
+
+| | original, 29270416 | sensitivity, 29350039 |
+|---|---|---|
+| trials | 89 | 89 |
+| solved | 0 | **0** |
+| `AgentTimeoutError` | 21 | 21 |
+| `VerifierTimeoutError` | 1 | 1 |
+| median trajectory | 24 KB | 49 KB |
+
+The equal timeout counts are coincidental. Only 8 of the 21 timed-out tasks are
+the same in both runs, and no trial directory name is shared, so these are
+independent trials.
+
+**The zero survives both relaxations.** The agent acted for about twice as long
+and still solved nothing, so the result is attributable to the model rather than
+to the context window or the time budget. Two variables changed at once, so the
+run cannot apportion the longer trajectories between them, but neither moved the
+outcome.
+
+### The job held its GPU for ten hours after finishing
+
+Harbor completed all 89 trials and printed `done` at 02:15:48 on 2026-09-09. LSF
+killed the job at 12:24:35 for exceeding its walltime. The cleanup hung after
+"stopping leftover containers", which leaves `reap_containers`, `singularity
+sweep` and the removal of the local scratch directory as the candidates. It is
+the idle-GPU pattern cluster support raised on 2026-08-22, recurring in the
+cleanup path rather than in the shim. No further jobs are planned, so it is
+recorded rather than fixed.
+
+### Gaps
+
+- Not judged. The question was whether the outcome changes, and it does not, so
+  labelling these trajectories would not alter any reported conclusion.
+
+---
+
 ## Decisions
 
 ### D1 — match tolerance fixed at 0 events (2026-07-30)
