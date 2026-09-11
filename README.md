@@ -8,12 +8,13 @@ Agents run on [Terminal-Bench 2.0](https://www.tbench.ai) via the [Harbor](https
 
 > How can a benchmark be designed to both measure the performance of agentic AI systems and systematically explain the causes of their failures?
 
-Answered through four subquestions:
+Answered through three subquestions:
 
 1. **Taxonomy** — how can existing agent failure taxonomies (TRAIL, AgentErrorTaxonomy) be adapted into a two-axis taxonomy — cognitive function and error type, located in the trajectory — for terminal-based tasks?
 2. **Judge validity** — how accurately can an LLM-as-judge classify agent failures, measured as agreement with expert annotations on the TRAIL benchmark? There is no human annotation anywhere in the project — the validated judge is the sole annotator.
-3. **Systematic vs. stochastic** — can variation across repeated runs distinguish systematic from stochastic agent failures?
-4. *(If time permits)* — do failure profiles differ across agents on the same tasks?
+3. **Agent performance and variation** — how well do agents perform on Terminal-Bench 2.0, and can variation across repeated runs distinguish systematic from stochastic agent failures?
+
+A fourth subquestion, comparing failure profiles across agents, was dropped on 2026-09-03 (D12 in `research/experiment-log.md`) and is left to future work. `afb profiles` still implements it.
 
 ## Research documents
 
@@ -39,7 +40,7 @@ Python ≥ 3.12, managed with `uv`. Install with `uv sync`.
 | `afb/agreement.py` | subquestion 2: judge validity against the experts |
 | `afb/coverage.py` | subquestion 1: escape-hatch and unused-code evidence for the next taxonomy version |
 | `afb/harbor.py` | Terminal-Bench runs ingested into the same trajectory format, reading Harbor's ATIF trajectory files |
-| `afb/runs.py` | subquestions 3 and 4: systematic vs. stochastic, and failure profiles per agent |
+| `afb/runs.py` | subquestion 3: systematic vs. stochastic, plus failure profiles per agent for future work |
 
 ### Usage
 
@@ -74,6 +75,10 @@ finish reasons behind it — as constitution principle 6 requires.
 ### Data
 
 TRAIL is gated and its terms forbid resharing, so `data/` and `results/` are not tracked. Accept the terms on the hub, set `HF_TOKEN`, and the ingest downloads and caches the splits on first use.
+
+### Results reported in the paper
+
+`report-results/` holds the outputs every figure in the report is computed from. See `report-results/README.md` for what each file is and which run produced it. The judge's labels on Terminal-Bench are published in full. Its labels on TRAIL are published without the free-text `rationale` field, since that text paraphrases the gated traces. The codes, spans and severities that remain are everything `afb agreement` needs, so the agreement figures can be reproduced by anyone with TRAIL access. `research/experiment-log.md` pins the configuration of every run.
 
 ### Tests
 
